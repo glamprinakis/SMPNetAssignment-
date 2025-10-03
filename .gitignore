@@ -7,5 +7,28 @@ node_modules
 .cdk.staging
 cdk.out
 
+# UV / Python
+.venv
+.venv/
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.uv/
+.python-version
+
+# Test coverage
+coverage/
+.coverage
+*.lcov
+
+# SOPS / Secrets
+secrets.yaml.dec
+*.dec
+# age-key.txt
+*.key
+
+.venv
+
 # OS files
 .DS_Store

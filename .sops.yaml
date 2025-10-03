@@ -1,0 +1,6 @@
+# SOPS Configuration
+# This file configures SOPS to use age encryption for secrets management
+
+creation_rules:
+  - path_regex: secrets\.yaml$
+    age: age1ln9pcgyp8js6uanng3f30faj98f0rsp6qr7a3xktycfy64twp9psk262sr
