@@ -1,7 +1,7 @@
 import * as cdk from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as s3 from 'aws-cdk-lib/aws-s3';
-import * as ssm from 'aws-cdk-lib/aws-ssm';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
 import { NetworkingConstruct } from './constructs/networking';
 import { SecurityGroupsConstruct } from './constructs/security-groups';
@@ -30,40 +30,27 @@ export class InfluxDbCrudStack extends cdk.Stack {
     // ============================================
 
     // ============================================
-    // SSM Parameters for InfluxDB Credentials (Secure)
+    // AWS Secrets Manager for InfluxDB Credentials (Enterprise-Grade)
     // ============================================
     
-    // Create SSM parameters with placeholder values
-    // After deployment, update the auth token with a secure value:
-    // aws ssm put-parameter --name "/influxdb/auth-token" --value "your-secure-token" --type SecureString --overwrite
-    
-    const authTokenParam = new ssm.StringParameter(this, 'InfluxDbTokenParam', {
-      parameterName: '/influxdb/auth-token',
-      stringValue: 'my-super-secret-auth-token',
-      description: 'InfluxDB authentication token - Update this with a secure value after deployment',
-      tier: ssm.ParameterTier.STANDARD,
+    // Create Secrets Manager secret with InfluxDB credentials
+    // These can be rotated and updated without redeploying the stack
+    const influxDbSecret = new secretsmanager.Secret(this, 'InfluxDbCredentials', {
+      secretName: 'influxdb-credentials',
+      description: 'InfluxDB credentials (auth token, organization, bucket)',
+      generateSecretString: {
+        secretStringTemplate: JSON.stringify({
+          organization: 'myorg',
+          bucket: 'mybucket',
+          username: 'admin',
+          password: 'adminpassword123',
+        }),
+        generateStringKey: 'token',
+        excludePunctuation: true,
+        includeSpace: false,
+        passwordLength: 32,
+      },
     });
-
-    const orgParam = new ssm.StringParameter(this, 'InfluxDbOrgParam', {
-      parameterName: '/influxdb/organization',
-      stringValue: 'myorg',
-      description: 'InfluxDB organization name',
-      tier: ssm.ParameterTier.STANDARD,
-    });
-
-    const bucketParam = new ssm.StringParameter(this, 'InfluxDbBucketParam', {
-      parameterName: '/influxdb/bucket',
-      stringValue: 'mybucket',
-      description: 'InfluxDB bucket name',
-      tier: ssm.ParameterTier.STANDARD,
-    });
-    
-    // SSM Parameter names (to be passed to Lambda)
-    const ssmParamNames = {
-      tokenParamName: authTokenParam.parameterName,
-      orgParamName: orgParam.parameterName,
-      bucketParamName: bucketParam.parameterName,
-    };
 
     // ============================================
     // Security Groups
@@ -79,9 +66,13 @@ export class InfluxDbCrudStack extends cdk.Stack {
     const influxDbInstanceConstruct = new InfluxDbInstanceConstruct(this, 'InfluxDbConstruct', {
       vpc,
       securityGroup: influxDbSecurityGroup,
+      secretArn: influxDbSecret.secretArn,
     });
 
     const influxDbInstance = influxDbInstanceConstruct.instance;
+    
+    // Grant EC2 instance permission to read the secret
+    influxDbSecret.grantRead(influxDbInstance);
 
     // ============================================
     // Lambda CRUD Service
@@ -90,12 +81,13 @@ export class InfluxDbCrudStack extends cdk.Stack {
       vpc,
       securityGroup: lambdaSecurityGroup,
       influxDbPrivateIp: influxDbInstance.instancePrivateIp,
-      influxDbTokenParamName: ssmParamNames.tokenParamName,
-      influxDbOrgParamName: ssmParamNames.orgParamName,
-      influxDbBucketParamName: ssmParamNames.bucketParamName,
+      secretArn: influxDbSecret.secretArn,
     });
 
     const crudLambda = lambdaCrudApi.lambdaFunction;
+    
+    // Grant Lambda permission to read the secret
+    influxDbSecret.grantRead(crudLambda);
 
     // ============================================
     // Application Load Balancer

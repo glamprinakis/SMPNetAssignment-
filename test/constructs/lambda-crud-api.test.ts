@@ -25,9 +25,7 @@ describe('LambdaCrudApiConstruct', () => {
       vpc,
       securityGroup,
       influxDbPrivateIp: '10.0.0.100',
-      influxDbTokenParamName: '/influxdb/auth-token',
-      influxDbOrgParamName: '/influxdb/organization',
-      influxDbBucketParamName: '/influxdb/bucket',
+      secretArn: 'arn:aws:secretsmanager:eu-central-1:123456789012:secret:test-secret',
     });
 
     const template = Template.fromStack(stack);
@@ -42,9 +40,7 @@ describe('LambdaCrudApiConstruct', () => {
       vpc,
       securityGroup,
       influxDbPrivateIp: '10.0.0.100',
-      influxDbTokenParamName: '/influxdb/auth-token',
-      influxDbOrgParamName: '/influxdb/organization',
-      influxDbBucketParamName: '/influxdb/bucket',
+      secretArn: 'arn:aws:secretsmanager:eu-central-1:123456789012:secret:test-secret',
     });
 
     const template = Template.fromStack(stack);
@@ -59,9 +55,7 @@ describe('LambdaCrudApiConstruct', () => {
       vpc,
       securityGroup,
       influxDbPrivateIp: '10.0.0.100',
-      influxDbTokenParamName: '/influxdb/auth-token',
-      influxDbOrgParamName: '/influxdb/organization',
-      influxDbBucketParamName: '/influxdb/bucket',
+      secretArn: 'arn:aws:secretsmanager:eu-central-1:123456789012:secret:test-secret',
     });
 
     const template = Template.fromStack(stack);
@@ -73,14 +67,12 @@ describe('LambdaCrudApiConstruct', () => {
     });
   });
 
-  test('Lambda function has correct environment variables with SSM parameter names', () => {
+  test('Lambda function has correct environment variables with Secrets Manager ARN', () => {
     new LambdaCrudApiConstruct(stack, 'TestLambda', {
       vpc,
       securityGroup,
       influxDbPrivateIp: '10.0.0.100',
-      influxDbTokenParamName: '/influxdb/auth-token',
-      influxDbOrgParamName: '/influxdb/organization',
-      influxDbBucketParamName: '/influxdb/bucket',
+      secretArn: 'arn:aws:secretsmanager:eu-central-1:123456789012:secret:test-secret',
     });
 
     const template = Template.fromStack(stack);
@@ -89,9 +81,7 @@ describe('LambdaCrudApiConstruct', () => {
       Environment: {
         Variables: {
           INFLUXDB_URL: 'http://10.0.0.100:8086',
-          INFLUXDB_TOKEN_PARAM: '/influxdb/auth-token',
-          INFLUXDB_ORG_PARAM: '/influxdb/organization',
-          INFLUXDB_BUCKET_PARAM: '/influxdb/bucket',
+          INFLUXDB_SECRET_ARN: 'arn:aws:secretsmanager:eu-central-1:123456789012:secret:test-secret',
         },
       },
     });
@@ -102,9 +92,7 @@ describe('LambdaCrudApiConstruct', () => {
       vpc,
       securityGroup,
       influxDbPrivateIp: '10.0.0.100',
-      influxDbTokenParamName: '/influxdb/auth-token',
-      influxDbOrgParamName: '/influxdb/organization',
-      influxDbBucketParamName: '/influxdb/bucket',
+      secretArn: 'arn:aws:secretsmanager:eu-central-1:123456789012:secret:test-secret',
     });
 
     const template = Template.fromStack(stack);
@@ -127,9 +115,7 @@ describe('LambdaCrudApiConstruct', () => {
       vpc,
       securityGroup,
       influxDbPrivateIp: '10.0.0.100',
-      influxDbTokenParamName: '/influxdb/auth-token',
-      influxDbOrgParamName: '/influxdb/organization',
-      influxDbBucketParamName: '/influxdb/bucket',
+      secretArn: 'arn:aws:secretsmanager:eu-central-1:123456789012:secret:test-secret',
     });
 
     const template = Template.fromStack(stack);
@@ -152,9 +138,7 @@ describe('LambdaCrudApiConstruct', () => {
       vpc,
       securityGroup,
       influxDbPrivateIp: '10.0.0.100',
-      influxDbTokenParamName: '/influxdb/auth-token',
-      influxDbOrgParamName: '/influxdb/organization',
-      influxDbBucketParamName: '/influxdb/bucket',
+      secretArn: 'arn:aws:secretsmanager:eu-central-1:123456789012:secret:test-secret',
     });
 
     const template = Template.fromStack(stack);
@@ -170,9 +154,7 @@ describe('LambdaCrudApiConstruct', () => {
       vpc,
       securityGroup,
       influxDbPrivateIp: '10.0.0.100',
-      influxDbTokenParamName: '/influxdb/auth-token',
-      influxDbOrgParamName: '/influxdb/organization',
-      influxDbBucketParamName: '/influxdb/bucket',
+      secretArn: 'arn:aws:secretsmanager:eu-central-1:123456789012:secret:test-secret',
     });
 
     const template = Template.fromStack(stack);
@@ -192,34 +174,34 @@ describe('LambdaCrudApiConstruct', () => {
       vpc,
       securityGroup,
       influxDbPrivateIp: '10.0.0.100',
-      influxDbTokenParamName: '/influxdb/auth-token',
-      influxDbOrgParamName: '/influxdb/organization',
-      influxDbBucketParamName: '/influxdb/bucket',
+      secretArn: 'arn:aws:secretsmanager:eu-central-1:123456789012:secret:test-secret',
     });
 
     expect(construct.lambdaFunction).toBeDefined();
   });
 
-  test('IAM role has SSM read permissions', () => {
+  test('IAM role is created for Lambda function', () => {
     new LambdaCrudApiConstruct(stack, 'TestLambda', {
       vpc,
       securityGroup,
       influxDbPrivateIp: '10.0.0.100',
-      influxDbTokenParamName: '/influxdb/auth-token',
-      influxDbOrgParamName: '/influxdb/organization',
-      influxDbBucketParamName: '/influxdb/bucket',
+      secretArn: 'arn:aws:secretsmanager:eu-central-1:123456789012:secret:test-secret',
     });
 
     const template = Template.fromStack(stack);
 
-    // Verify IAM policy allows SSM parameter reading
-    template.hasResourceProperties('AWS::IAM::Policy', {
-      PolicyDocument: {
+    // Verify IAM role exists with Lambda service principal
+    // Note: Secrets Manager permissions are granted in the main stack via grantRead()
+    template.hasResourceProperties('AWS::IAM::Role', {
+      AssumeRolePolicyDocument: {
         Statement: Match.arrayWith([
-          Match.objectLike({
+          {
+            Action: 'sts:AssumeRole',
             Effect: 'Allow',
-            Action: Match.arrayWith(['ssm:GetParameter']),
-          }),
+            Principal: {
+              Service: 'lambda.amazonaws.com',
+            },
+          },
         ]),
       },
     });

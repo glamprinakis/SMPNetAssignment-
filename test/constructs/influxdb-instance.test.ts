@@ -22,6 +22,7 @@ describe('InfluxDbInstanceConstruct', () => {
 
   test('creates EC2 instance with correct type', () => {
     new InfluxDbInstanceConstruct(stack, 'TestInfluxDb', {
+      secretArn: 'arn:aws:secretsmanager:eu-central-1:123456789012:secret:influxdb-credentials-abc123',
       vpc,
       securityGroup,
     });
@@ -35,6 +36,7 @@ describe('InfluxDbInstanceConstruct', () => {
 
   test('instance is in private subnet', () => {
     new InfluxDbInstanceConstruct(stack, 'TestInfluxDb', {
+      secretArn: 'arn:aws:secretsmanager:eu-central-1:123456789012:secret:influxdb-credentials-abc123',
       vpc,
       securityGroup,
     });
@@ -49,6 +51,7 @@ describe('InfluxDbInstanceConstruct', () => {
 
   test('IAM role has required managed policies', () => {
     new InfluxDbInstanceConstruct(stack, 'TestInfluxDb', {
+      secretArn: 'arn:aws:secretsmanager:eu-central-1:123456789012:secret:influxdb-credentials-abc123',
       vpc,
       securityGroup,
     });
@@ -72,6 +75,7 @@ describe('InfluxDbInstanceConstruct', () => {
 
   test('IAM instance profile is attached to EC2 instance', () => {
     new InfluxDbInstanceConstruct(stack, 'TestInfluxDb', {
+      secretArn: 'arn:aws:secretsmanager:eu-central-1:123456789012:secret:influxdb-credentials-abc123',
       vpc,
       securityGroup,
     });
@@ -88,6 +92,7 @@ describe('InfluxDbInstanceConstruct', () => {
 
   test('UserData contains InfluxDB installation commands', () => {
     new InfluxDbInstanceConstruct(stack, 'TestInfluxDb', {
+      secretArn: 'arn:aws:secretsmanager:eu-central-1:123456789012:secret:influxdb-credentials-abc123',
       vpc,
       securityGroup,
     });
@@ -109,6 +114,7 @@ describe('InfluxDbInstanceConstruct', () => {
 
   test('UserData contains InfluxDB setup commands', () => {
     new InfluxDbInstanceConstruct(stack, 'TestInfluxDb', {
+      secretArn: 'arn:aws:secretsmanager:eu-central-1:123456789012:secret:influxdb-credentials-abc123',
       vpc,
       securityGroup,
     });
@@ -125,6 +131,7 @@ describe('InfluxDbInstanceConstruct', () => {
 
   test('UserData includes health check validation', () => {
     new InfluxDbInstanceConstruct(stack, 'TestInfluxDb', {
+      secretArn: 'arn:aws:secretsmanager:eu-central-1:123456789012:secret:influxdb-credentials-abc123',
       vpc,
       securityGroup,
     });
@@ -141,6 +148,7 @@ describe('InfluxDbInstanceConstruct', () => {
 
   test('exports instance and private IP', () => {
     const construct = new InfluxDbInstanceConstruct(stack, 'TestInfluxDb', {
+      secretArn: 'arn:aws:secretsmanager:eu-central-1:123456789012:secret:influxdb-credentials-abc123',
       vpc,
       securityGroup,
     });
@@ -151,6 +159,7 @@ describe('InfluxDbInstanceConstruct', () => {
 
   test('security group is attached to instance', () => {
     new InfluxDbInstanceConstruct(stack, 'TestInfluxDb', {
+      secretArn: 'arn:aws:secretsmanager:eu-central-1:123456789012:secret:influxdb-credentials-abc123',
       vpc,
       securityGroup,
     });
@@ -168,6 +177,7 @@ describe('InfluxDbInstanceConstruct', () => {
 
   test('EBS volume is encrypted', () => {
     new InfluxDbInstanceConstruct(stack, 'TestInfluxDb', {
+      secretArn: 'arn:aws:secretsmanager:eu-central-1:123456789012:secret:influxdb-credentials-abc123',
       vpc,
       securityGroup,
     });

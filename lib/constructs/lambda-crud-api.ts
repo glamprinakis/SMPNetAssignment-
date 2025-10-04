@@ -6,7 +6,7 @@
  * - UV-based dependency bundling
  * - VPC configuration for private subnet deployment
  * - Environment variables for InfluxDB connection
- * - IAM role with VPC and CloudWatch permissions
+ * - IAM role with Secrets Manager read permissions
  * 
  * Exported Resources:
  * - lambdaFunction: The Lambda function for CRUD operations
@@ -17,7 +17,6 @@ import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as logs from 'aws-cdk-lib/aws-logs';
-import * as ssm from 'aws-cdk-lib/aws-ssm';
 import * as cdk from 'aws-cdk-lib';
 
 export interface LambdaCrudApiConstructProps {
@@ -37,19 +36,9 @@ export interface LambdaCrudApiConstructProps {
   readonly influxDbPrivateIp: string;
 
   /**
-   * SSM Parameter name for InfluxDB authentication token
+   * ARN of the Secrets Manager secret containing InfluxDB credentials
    */
-  readonly influxDbTokenParamName: string;
-
-  /**
-   * SSM Parameter name for InfluxDB organization
-   */
-  readonly influxDbOrgParamName: string;
-
-  /**
-   * SSM Parameter name for InfluxDB bucket
-   */
-  readonly influxDbBucketParamName: string;
+  readonly secretArn: string;
 }
 
 export class LambdaCrudApiConstruct extends Construct {
@@ -61,29 +50,21 @@ export class LambdaCrudApiConstruct extends Construct {
   constructor(scope: Construct, id: string, props: LambdaCrudApiConstructProps) {
     super(scope, id);
 
-    const { vpc, securityGroup, influxDbPrivateIp, influxDbTokenParamName, influxDbOrgParamName, influxDbBucketParamName } = props;
+    const { vpc, securityGroup, influxDbPrivateIp, secretArn } = props;
 
     // IAM Role for Lambda (created at parent scope to preserve logical ID)
     const lambdaRole = new iam.Role(scope, 'LambdaCrudRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-      description: 'IAM role for Lambda CRUD service with SSM access',
+      description: 'IAM role for Lambda CRUD service with Secrets Manager access',
       managedPolicies: [
         iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaVPCAccessExecutionRole'),
         iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
       ],
     });
 
-    // Grant Lambda permission to read SSM parameters
-    lambdaRole.addToPolicy(new iam.PolicyStatement({
-      effect: iam.Effect.ALLOW,
-      actions: ['ssm:GetParameter', 'ssm:GetParameters'],
-      resources: [
-        `arn:aws:ssm:${cdk.Stack.of(scope).region}:${cdk.Stack.of(scope).account}:parameter/influxdb/*`,
-      ],
-    }));
-
     // Create Lambda function with UV-based dependencies
     // Note: UV bundling happens during deployment via pyproject.toml
+    // Note: Secrets Manager read permission is granted in the main stack
     this.lambdaFunction = new lambda.Function(scope, 'CrudLambdaFunction', {
       runtime: lambda.Runtime.PYTHON_3_11,
       handler: 'index.handler',
@@ -97,9 +78,7 @@ export class LambdaCrudApiConstruct extends Construct {
       timeout: cdk.Duration.seconds(30),
       environment: {
         INFLUXDB_URL: `http://${influxDbPrivateIp}:8086`,
-        INFLUXDB_TOKEN_PARAM: influxDbTokenParamName,
-        INFLUXDB_ORG_PARAM: influxDbOrgParamName,
-        INFLUXDB_BUCKET_PARAM: influxDbBucketParamName,
+        INFLUXDB_SECRET_ARN: secretArn,
       },
       logRetention: logs.RetentionDays.ONE_WEEK,
     });

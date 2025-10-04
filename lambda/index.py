@@ -15,43 +15,40 @@ import urllib3
 from datetime import datetime
 import boto3
 
-# Initialize SSM client
-ssm_client = boto3.client('ssm')
+# Initialize Secrets Manager client
+secrets_client = boto3.client('secretsmanager')
 
-# Cache for SSM parameters
-_ssm_cache = {}
+# Cache for secrets
+_secrets_cache = {}
 
-def get_ssm_parameter(param_name):
-    """Get parameter from SSM Parameter Store with caching."""
-    if param_name not in _ssm_cache:
+def get_influxdb_credentials():
+    """Get credentials from AWS Secrets Manager with caching."""
+    secret_arn = os.environ.get('INFLUXDB_SECRET_ARN')
+    
+    if 'credentials' not in _secrets_cache:
         try:
-            response = ssm_client.get_parameter(
-                Name=param_name,
-                WithDecryption=True
-            )
-            _ssm_cache[param_name] = response['Parameter']['Value']
+            response = secrets_client.get_secret_value(SecretId=secret_arn)
+            secret_json = json.loads(response['SecretString'])
+            _secrets_cache['credentials'] = secret_json
+            print("Successfully fetched credentials from Secrets Manager")
         except Exception as e:
-            print(f"Error fetching SSM parameter {param_name}: {e}")
+            print(f"Error fetching secret from Secrets Manager: {e}")
             raise
-    return _ssm_cache[param_name]
+    
+    return _secrets_cache['credentials']
 
 # InfluxDB configuration from environment variables
 INFLUXDB_URL = os.environ.get('INFLUXDB_URL', 'http://localhost:8086')
 
-# Read SSM parameter names from environment
-INFLUXDB_TOKEN_PARAM = os.environ.get('INFLUXDB_TOKEN_PARAM')
-INFLUXDB_ORG_PARAM = os.environ.get('INFLUXDB_ORG_PARAM')
-INFLUXDB_BUCKET_PARAM = os.environ.get('INFLUXDB_BUCKET_PARAM')
-
-# Lazy load credentials from SSM
+# Lazy load credentials from Secrets Manager
 def get_influxdb_token():
-    return get_ssm_parameter(INFLUXDB_TOKEN_PARAM)
+    return get_influxdb_credentials()['token']
 
 def get_influxdb_org():
-    return get_ssm_parameter(INFLUXDB_ORG_PARAM)
+    return get_influxdb_credentials()['organization']
 
 def get_influxdb_bucket():
-    return get_ssm_parameter(INFLUXDB_BUCKET_PARAM)
+    return get_influxdb_credentials()['bucket']
 
 http = urllib3.PoolManager()
 
