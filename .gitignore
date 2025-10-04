@@ -1,34 +1,17 @@
-*.js
-!jest.config.js
-*.d.ts
-node_modules
+# Build outputs
+dist/
+build/
 
-# CDK asset staging directory
-.cdk.staging
-cdk.out
+# TypeScript artifacts
+**/*.js
+**/*.d.ts
 
-# UV / Python
-.venv
-.venv/
+# CDK
+cdk.out/
+
+# Python artifacts
 __pycache__/
 *.pyc
-*.pyo
-*.egg-info/
-.uv/
-.python-version
 
-# Test coverage
-coverage/
-.coverage
-*.lcov
-
-# SOPS / Secrets
-secrets.yaml.dec
-*.dec
-# age-key.txt
-*.key
-
-.venv
-
-# OS files
-.DS_Store
+# Node
+node_modules/
