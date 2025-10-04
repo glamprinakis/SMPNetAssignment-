@@ -72,20 +72,20 @@ def query_data(query_str):
 
 def parse_influxdb_response(csv_data):
     """Parse InfluxDB CSV response into JSON format."""
-    lines = csv_data.strip().split('\n')
+    lines = csv_data.strip().splitlines()
     if len(lines) < 2:
         return []
     
     # Skip metadata rows and get header
-    data_lines = [line for line in lines if not line.startswith('#')]
+    data_lines = [line.strip() for line in lines if line.strip() and not line.startswith('#')]
     if len(data_lines) < 2:
         return []
     
-    headers = data_lines[0].split(',')
+    headers = [h.strip() for h in data_lines[0].split(',')]
     result = []
     
     for line in data_lines[1:]:
-        values = line.split(',')
+        values = [v.strip() for v in line.split(',')]
         row = dict(zip(headers, values))
         result.append(row)
     
