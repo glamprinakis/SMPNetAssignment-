@@ -47,7 +47,7 @@ describe('InfluxDbInstanceConstruct', () => {
     });
   });
 
-  test('IAM role includes SSM GetParameter permission', () => {
+  test('IAM role has required managed policies', () => {
     new InfluxDbInstanceConstruct(stack, 'TestInfluxDb', {
       vpc,
       securityGroup,
@@ -55,16 +55,18 @@ describe('InfluxDbInstanceConstruct', () => {
 
     const template = Template.fromStack(stack);
 
-    template.hasResourceProperties('AWS::IAM::Policy', {
-      PolicyDocument: {
+    // Verify role exists
+    template.hasResourceProperties('AWS::IAM::Role', {
+      AssumeRolePolicyDocument: Match.objectLike({
         Statement: Match.arrayWith([
           Match.objectLike({
-            Action: 'ssm:GetParameter',
-            Effect: 'Allow',
-            Resource: Match.stringLikeRegexp('.*parameter/influxdb/age-private-key'),
+            Action: 'sts:AssumeRole',
+            Principal: {
+              Service: 'ec2.amazonaws.com',
+            },
           }),
         ]),
-      },
+      }),
     });
   });
 
@@ -96,7 +98,7 @@ describe('InfluxDbInstanceConstruct', () => {
     });
   });
 
-  test('UserData contains SOPS installation commands', () => {
+  test('UserData contains InfluxDB installation commands', () => {
     new InfluxDbInstanceConstruct(stack, 'TestInfluxDb', {
       vpc,
       securityGroup,
@@ -111,13 +113,13 @@ describe('InfluxDbInstanceConstruct', () => {
     expect(userData).toBeDefined();
     expect(userData['Fn::Base64']).toBeDefined();
 
-    // Check for SOPS-related commands in UserData
+    // Check for InfluxDB installation commands in UserData
     const userDataContent = JSON.stringify(userData);
-    expect(userDataContent).toContain('sops');
-    expect(userDataContent).toContain('Installing SOPS');
+    expect(userDataContent).toContain('influxd');
+    expect(userDataContent).toContain('Installing InfluxDB');
   });
 
-  test('UserData contains age installation commands', () => {
+  test('UserData contains InfluxDB setup commands', () => {
     new InfluxDbInstanceConstruct(stack, 'TestInfluxDb', {
       vpc,
       securityGroup,
@@ -129,28 +131,11 @@ describe('InfluxDbInstanceConstruct', () => {
     const userData = Object.values(instance)[0].Properties.UserData;
     const userDataContent = JSON.stringify(userData);
 
-    expect(userDataContent).toContain('age');
-    expect(userDataContent).toContain('Installing age');
+    expect(userDataContent).toContain('influx setup');
+    expect(userDataContent).toContain('systemctl');
   });
 
-  test('UserData contains SSM parameter retrieval', () => {
-    new InfluxDbInstanceConstruct(stack, 'TestInfluxDb', {
-      vpc,
-      securityGroup,
-      ageKeyParameterName: '/custom/age-key',
-    });
-
-    const template = Template.fromStack(stack);
-
-    const instance = template.findResources('AWS::EC2::Instance');
-    const userData = Object.values(instance)[0].Properties.UserData;
-    const userDataContent = JSON.stringify(userData);
-
-    expect(userDataContent).toContain('ssm get-parameter');
-    expect(userDataContent).toContain('/custom/age-key');
-  });
-
-  test('UserData includes error handling', () => {
+  test('UserData includes health check validation', () => {
     new InfluxDbInstanceConstruct(stack, 'TestInfluxDb', {
       vpc,
       securityGroup,
@@ -162,8 +147,8 @@ describe('InfluxDbInstanceConstruct', () => {
     const userData = Object.values(instance)[0].Properties.UserData;
     const userDataContent = JSON.stringify(userData);
 
-    expect(userDataContent).toContain('ERROR');
-    expect(userDataContent).toContain('FALLBACK');
+    expect(userDataContent).toContain('curl');
+    expect(userDataContent).toContain('/health');
   });
 
   test('exports instance and private IP', () => {

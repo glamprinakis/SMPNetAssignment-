@@ -47,21 +47,25 @@ export class InfluxDbInstanceConstruct extends Construct {
 
     const { vpc, securityGroup } = props;
 
-    // IAM Role for InfluxDB EC2 Instance (created at parent scope to preserve logical ID)
-    const influxDbRole = new iam.Role(scope, 'InfluxDbEC2Role', {
-      assumedBy: new iam.ServicePrincipal('ec2.amazonaws.com'),
-      description: 'IAM role for InfluxDB EC2 instance',
-      managedPolicies: [
-        iam.ManagedPolicy.fromAwsManagedPolicyName('CloudWatchAgentServerPolicy'),
-        iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonSSMManagedInstanceCore'),
-      ],
+    this.instance = new ec2.Instance(scope, 'InfluxDbInstance', {
+      vpc,
+      vpcSubnets: {
+        subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS,
+      },
+      instanceType: ec2.InstanceType.of(ec2.InstanceClass.T2, ec2.InstanceSize.MICRO),
+      machineImage,
+      securityGroup,
+      userData,
+      role: influxDbRole,
+      associatePublicIpAddress: false,
     });
 
-    // Hardcoded credentials for simplicity
-    const ADMIN_PASSWORD = 'adminpassword123';
-    const AUTH_TOKEN = 'my-super-secret-auth-token';
-    const ORG = 'myorg';
-    const BUCKET = 'mybucket';
+    // Retrieve credentials from Secrets Manager
+    const secret = secretsmanager.Secret.fromSecretNameV2(this, 'InfluxDbSecret', 'influxdb-credentials');
+    const ADMIN_PASSWORD = secret.secretValueFromJson('adminPassword').unsafeUnwrap();
+    const AUTH_TOKEN    = secret.secretValueFromJson('authToken').unsafeUnwrap();
+    const ORG           = secret.secretValueFromJson('org').unsafeUnwrap();
+    const BUCKET        = secret.secretValueFromJson('bucket').unsafeUnwrap();
 
     // InfluxDB installation script
     const userData = ec2.UserData.forLinux();
@@ -125,7 +129,7 @@ export class InfluxDbInstanceConstruct extends Construct {
       userData,
       associatePublicIpAddress: false,
       blockDevices: [
-        {
+            encrypted: true,
           deviceName: '/dev/xvda',
           volume: ec2.BlockDeviceVolume.ebs(8, {
             volumeType: ec2.EbsDeviceVolumeType.GP2,

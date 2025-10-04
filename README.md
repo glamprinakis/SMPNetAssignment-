@@ -118,19 +118,172 @@ Time:        ~6s
 Coverage:    80%+
 ```
 
+### Finding Your ALB DNS
+
+After deployment, you need the Application Load Balancer DNS name to test the API:
+
+```bash
+# Make scripts executable (first time only)
+chmod +x scripts/*.sh
+
+# Option 1: Check deployment status (requires CloudFormation permissions)
+./scripts/check-deployment-status.sh
+
+# Option 2: Use the helper script to find ALB DNS
+./scripts/get-alb-dns.sh
+
+# Option 3: Manual lookup - Check deployment output for:
+# "InfluxDbCrudStack.ALBDnsName = your-alb-xxxxx.region.elb.amazonaws.com"
+```
+
+**Note**: If you don't have CloudFormation permissions, the ALB DNS will be shown in your deployment terminal output.
+
+**Sample Output:**
+```
+╔══════════════════════════════════════════════════════════════╗
+║        CDK Deployment Status Checker                         ║
+╚══════════════════════════════════════════════════════════════╝
+
+ℹ Checking CloudFormation stack: InfluxDbCrudStack
+
+  Status: CREATE_COMPLETE
+✓ Stack is deployed successfully
+
+ℹ Retrieving stack outputs...
+
+  ALB DNS: my-alb-123456.eu-central-1.elb.amazonaws.com
+
+ℹ Checking API health...
+
+  Attempt 1/3: OK
+✓ API is healthy and responding
+
+✓ Deployment is complete and healthy! 🚀
+
+  You can now test the API:
+    ./scripts/test-api.sh
+```
+
+**Exit codes:**
+- `0` - Stack deployed and healthy (ready to test)
+- `1` - Stack not deployed or unhealthy
+- `2` - Stack deployment in progress
+
 ### API Endpoint Testing
 
-#### Option 1: Manual Testing with cURL
+#### Option 1: Automated Integration Tests (Recommended)
 
-Replace `<ALB-DNS>` with your actual ALB DNS name from deployment outputs.
+Run the comprehensive test suite that validates all CRUD operations:
+
+```bash
+# Make script executable (first time only)
+chmod +x scripts/test-api.sh
+
+# Auto-discover ALB DNS from CloudFormation (recommended)
+./scripts/test-api.sh
+
+# Or specify ALB DNS manually
+./scripts/test-api.sh my-alb-123456.eu-central-1.elb.amazonaws.com
+```
+
+**Features:**
+- ✅ Auto-discovers ALB DNS from CloudFormation
+- ✅ Validates HTTP status codes and response structure
+- ✅ Tests all CRUD operations (Create, Read, Update, Delete)
+- ✅ Includes error handling tests
+- ✅ Automatic cleanup of test data
+- ✅ Color-coded output with pass/fail indicators
+- ✅ Comprehensive test summary
+
+**Sample Output:**
+```
+╔══════════════════════════════════════════════════════════════╗
+║     InfluxDB CRUD API Integration Test Suite                ║
+╚══════════════════════════════════════════════════════════════╝
+
+✓ All prerequisites installed
+ℹ Retrieving ALB DNS from CloudFormation stack
+ℹ Test Configuration:
+  Base URL: http://my-alb-123456.eu-central-1.elb.amazonaws.com
+  Test ID: test_1696348800
+
+ℹ Waiting for API to be healthy...
+✓ API is healthy
+
+================================================================
+Test Suite 1: Health Check
+================================================================
+Response: {"status":"healthy","timestamp":"2025-10-03T12:34:56.123456"}
+✓ Test 1: Health check returns 200 OK (Status: 200)
+✓ Test 2: Health status is 'healthy'
+✓ Test 3: Timestamp field exists
+
+================================================================
+Test Suite 2: Create Data (POST /data)
+================================================================
+Response: {"message":"Data created successfully"}
+✓ Test 4: Create data point 1 returns 201 Created (Status: 201)
+✓ Test 5: Success message received
+Response: {"message":"Data created successfully"}
+✓ Test 6: Create data point 2 returns 201 Created (Status: 201)
+
+================================================================
+Test Suite 3: Retrieve Data (GET /data)
+================================================================
+✓ Test 7: Get all data returns 200 OK (Status: 200)
+✓ Test 8: Response contains 'data' field
+✓ Test 9: Created data point 1 exists in response
+
+================================================================
+Test Suite 4: Update Data (PUT /data/:id)
+================================================================
+Response: {"message":"Data test_1696348800_sensor_001 updated successfully"}
+✓ Test 10: Update data returns 200 OK (Status: 200)
+✓ Test 11: Update success message received
+
+================================================================
+Test Suite 5: Delete Data (DELETE /data/:id)
+================================================================
+Response: {"message":"Data test_1696348800_sensor_001 deleted successfully"}
+✓ Test 12: Delete data returns 200 OK (Status: 200)
+✓ Test 13: Delete success message received
+✓ Test 14: Deleted data no longer appears in results
+
+================================================================
+Test Suite 6: Error Handling
+================================================================
+✓ Test 15: Invalid endpoint returns 404 Not Found (Status: 404)
+
+================================================================
+Test Summary
+================================================================
+
+  Total Tests:    15
+  Passed:         15
+  Failed:         0
+
+✓ All tests passed! 🎉
+```
+
+**Exit codes:**
+- `0` - All tests passed
+- `1` - One or more tests failed
+- `2` - Prerequisites missing or setup failed
+
+#### Option 2: Manual Testing with cURL
+
+For manual testing or debugging, use cURL commands directly:
 
 **1. Health Check**
 ```bash
-curl http://<ALB-DNS>/health
+curl http://<ALB-DNS>/health | jq '.'
 ```
 **Expected Response:**
 ```json
-{"status": "healthy", "timestamp": "2025-10-03T10:30:00.000000"}
+{
+  "status": "healthy",
+  "timestamp": "2025-10-03T10:30:00.000000"
+}
 ```
 
 **2. Create Data**
@@ -138,19 +291,21 @@ curl http://<ALB-DNS>/health
 curl -X POST http://<ALB-DNS>/data \
   -H "Content-Type: application/json" \
   -d '{
-    "measurement": "temperature",
+    "measurement": "sensor_data",
     "tags": {"sensor_id": "sensor_001", "location": "office"},
-    "fields": {"value": 22.5, "humidity": 65}
-  }'
+    "fields": {"temperature": 22.5, "humidity": 65}
+  }' | jq '.'
 ```
 **Expected Response:**
 ```json
-{"message": "Data created successfully"}
+{
+  "message": "Data created successfully"
+}
 ```
 
 **3. Get All Data**
 ```bash
-curl http://<ALB-DNS>/data
+curl http://<ALB-DNS>/data | jq '.'
 ```
 **Expected Response:**
 ```json
@@ -158,9 +313,9 @@ curl http://<ALB-DNS>/data
   "data": [
     {
       "_time": "2025-10-03T10:30:00Z",
-      "_measurement": "temperature",
+      "_measurement": "sensor_data",
       "sensor_id": "sensor_001",
-      "value": "22.5",
+      "temperature": "22.5",
       "humidity": "65"
     }
   ]
@@ -172,78 +327,99 @@ curl http://<ALB-DNS>/data
 curl -X PUT http://<ALB-DNS>/data/sensor_001 \
   -H "Content-Type: application/json" \
   -d '{
-    "measurement": "temperature",
+    "measurement": "sensor_data",
     "tags": {"sensor_id": "sensor_001"},
-    "fields": {"value": 25.0, "humidity": 70}
-  }'
+    "fields": {"temperature": 25.0, "humidity": 70}
+  }' | jq '.'
 ```
 **Expected Response:**
 ```json
-{"message": "Data sensor_001 updated successfully"}
+{
+  "message": "Data sensor_001 updated successfully"
+}
 ```
 
 **5. Delete Data**
 ```bash
-curl -X DELETE http://<ALB-DNS>/data/sensor_001
+curl -X DELETE http://<ALB-DNS>/data/sensor_001 | jq '.'
 ```
 **Expected Response:**
 ```json
-{"message": "Data sensor_001 deleted successfully"}
+{
+  "message": "Data sensor_001 deleted successfully"
+}
 ```
 
-#### Option 2: Automated Testing Script
+### Troubleshooting Tests
 
-Run the comprehensive test script:
-
+#### Quick Troubleshooting Guide
 ```bash
-# Make script executable (first time only)
-chmod +x scripts/test-api.sh
-
-# Run all tests
-./scripts/test-api.sh <ALB-DNS>
-
-# Example:
-./scripts/test-api.sh my-alb-123456.eu-central-1.elb.amazonaws.com
+# See all available commands and common issues
+./scripts/quick-test-guide.sh
 ```
 
-The script will:
-- ✅ Test health check endpoint
-- ✅ Create two data points
-- ✅ Retrieve all data
-- ✅ Update a data point
-- ✅ Delete a data point
-- ✅ Verify deletion
+#### Test script fails with "Could not retrieve ALB DNS"
+**Cause**: Missing AWS CloudFormation permissions
 
-**Sample Output:**
+**Solutions**:
+```bash
+# Option 1: Use the helper script
+./scripts/get-alb-dns.sh
+
+# Option 2: Find ALB DNS in AWS Console
+# Go to: EC2 > Load Balancers > Look for "Influx-CrudA-*"
+
+# Option 3: Check your deployment terminal output for:
+# "InfluxDbCrudStack.ALBDnsName = your-alb-xxxxx.elb.amazonaws.com"
+
+# Then run tests with explicit DNS:
+./scripts/test-api.sh "your-alb-xxxxx.region.elb.amazonaws.com"
 ```
-================================================
-Testing CRUD API at: http://your-alb.elb.amazonaws.com
-================================================
 
-Test 1: Health Check
-GET /health
----
-{
-  "status": "healthy",
-  "timestamp": "2025-10-03T12:34:56.123456"
-}
-Status: 200
+#### Health check passes but CRUD operations fail with "Connection refused"
+**Cause**: Lambda cannot connect to InfluxDB on port 8086
 
-================================================
-Test 2: Create Data Point
-POST /data
----
-{
-  "message": "Data created successfully"
-}
-Status: 200
+**Diagnosis**: Error message shows `HTTPConnectionPool(host='10.0.x.x', port=8086): ... Connection refused`
 
-...
+**Solutions**:
+1. **Wait for InfluxDB initialization** (5-10 minutes after first deployment)
+2. **Check InfluxDB is running**:
+   ```bash
+   # Find EC2 instance ID
+   aws ec2 describe-instances \
+     --filters "Name=tag:Name,Values=*InfluxDbInstance*" \
+     --query "Reservations[0].Instances[0].InstanceId"
+   
+   # Connect via SSM and check status
+   aws ssm start-session --target <INSTANCE_ID>
+   sudo systemctl status influxdb
+   ```
+3. **Verify security groups** allow Lambda → InfluxDB on port 8086
+4. **Check Lambda logs**:
+   ```bash
+   aws logs tail /aws/lambda/InfluxDbCrudStack-CrudLambdaFunction --follow
+   ```
 
-================================================
-All tests completed!
-================================================
+#### Tests pass but data doesn't appear in GET requests
+**Cause**: InfluxDB eventual consistency
+
+This is normal behavior! InfluxDB may have a slight delay before data becomes queryable. The test script accounts for this with sleep intervals between operations.
+
+#### "jq: command not found"
+```bash
+# Install jq for better JSON handling
+brew install jq  # macOS
+# or
+sudo apt-get install jq  # Ubuntu/Debian
 ```
+
+#### All tests fail immediately
+**Checklist**:
+- ✅ Stack is deployed (`cdk deploy` completed successfully)
+- ✅ ALB DNS is correct (no typos, no newlines)
+- ✅ ALB is in "active" state (check EC2 console)
+- ✅ Target group has healthy targets
+- ✅ Lambda function exists and has correct VPC configuration
 
 ## 📋 Useful Commands
 

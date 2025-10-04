@@ -77,7 +77,7 @@ def parse_influxdb_response(csv_data):
         return []
     
     # Skip metadata rows and get header
-    data_lines = [line.strip() for line in lines if line.strip() and not line.startswith('#')]
+    data_lines = [stripped for line in lines if (stripped := line.strip()) and not stripped.startswith('#')]
     if len(data_lines) < 2:
         return []
     

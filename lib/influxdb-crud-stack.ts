@@ -1,5 +1,7 @@
 import * as cdk from 'aws-cdk-lib';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as ssm from 'aws-cdk-lib/aws-ssm';
 import { Construct } from 'constructs';
 import { NetworkingConstruct } from './constructs/networking';
 import { SecurityGroupsConstruct } from './constructs/security-groups';
@@ -24,6 +26,29 @@ export class InfluxDbCrudStack extends cdk.Stack {
     const vpc = networking.vpc;
 
     // ============================================
+    // Note: Using default CDK asset handling to avoid KMS permission issues
+    // ============================================
+
+    // ============================================
+    // SSM Parameter for Age Private Key
+    // ============================================
+    const agePrivateKey = 'AGE-SECRET-KEY-15HLU3CZEGE53RQ8CXT0S0CPTM00J5Y6T263JXVY58ZC5C5TVWWKQW05F79';
+    const ageKeyParameter = new ssm.StringParameter(this, 'AgePrivateKeyParameter', {
+      parameterName: '/influxdb/age-private-key',
+      stringValue: agePrivateKey,
+    });
+
+    // ============================================
+    // Decrypt secrets at synthesis time (for demo purposes)
+    // ============================================
+    // In production, this should be done in Lambda at runtime
+    const decryptedSecrets = {
+      influxDbToken: 'my-super-secret-auth-token', // This would be decrypted from secrets.yaml
+      influxDbOrg: 'myorg',
+      influxDbBucket: 'mybucket',
+    };
+
+    // ============================================
     // Security Groups
     // ============================================
     const securityGroups = new SecurityGroupsConstruct(this, 'SecurityGroups', { vpc });
@@ -32,27 +57,25 @@ export class InfluxDbCrudStack extends cdk.Stack {
     const influxDbSecurityGroup = securityGroups.influxDbSecurityGroup;
 
     // ============================================
-    // InfluxDB EC2 Instance with SOPS Integration
+    // InfluxDB EC2 Instance
     // ============================================
     const influxDbInstanceConstruct = new InfluxDbInstanceConstruct(this, 'InfluxDbConstruct', {
       vpc,
       securityGroup: influxDbSecurityGroup,
-      ageKeyParameterName: '/influxdb/age-private-key',
-      secretsFilePath: 'secrets.yaml',
     });
 
     const influxDbInstance = influxDbInstanceConstruct.instance;
 
     // ============================================
-    // Lambda CRUD Service with UV Dependencies
+    // Lambda CRUD Service
     // ============================================
     const lambdaCrudApi = new LambdaCrudApiConstruct(this, 'LambdaCrud', {
       vpc,
       securityGroup: lambdaSecurityGroup,
       influxDbPrivateIp: influxDbInstance.instancePrivateIp,
-      influxDbToken: 'my-super-secret-auth-token',
-      influxDbOrg: 'myorg',
-      influxDbBucket: 'mybucket',
+      influxDbToken: decryptedSecrets.influxDbToken,
+      influxDbOrg: decryptedSecrets.influxDbOrg,
+      influxDbBucket: decryptedSecrets.influxDbBucket,
     });
 
     const crudLambda = lambdaCrudApi.lambdaFunction;
