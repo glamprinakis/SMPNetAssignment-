@@ -12,19 +12,19 @@ graph TB
     
     subgraph AWS[AWS Cloud - Region: eu-central-1]
         subgraph VPC[VPC: 10.0.0.0/16]
-            subgraph PublicSubnets[Public Subnets - 2 AZs]
-                ALB[Application Load Balancer<br/>Port 80]
-                NAT[NAT Gateway]
+      subgraph PublicSubnets[Public Subnets - 2 AZs]
+        ALB["Application Load Balancer<br>Port 80"]
+        NAT[NAT Gateway]
             end
             
-            subgraph PrivateSubnets[Private Subnets - 2 AZs]
-                Lambda[Lambda Function<br/>Python 3.11<br/>CRUD Operations]
-                EC2[EC2 t2.micro<br/>InfluxDB 2.7.10<br/>Port 8086]
+      subgraph PrivateSubnets[Private Subnets - 2 AZs]
+        Lambda["Lambda Function<br>Python 3.11<br>CRUD Operations"]
+        EC2["EC2 t2.micro<br>InfluxDB 2.7.10<br>Port 8086"]
             end
         end
         
-        Secrets[AWS Secrets Manager<br/>Auto-Generated Token<br/>Encrypted Credentials]
-        CloudWatch[CloudWatch<br/>Logs and Alarms]
+  Secrets["AWS Secrets Manager<br>Auto-generated token<br>Encrypted credentials (rotation optional)"]
+  CloudWatch["CloudWatch<br>Logs and Alarms"]
     end
     
     Internet -->|HTTP Request| ALB
@@ -32,6 +32,8 @@ graph TB
     Lambda -->|Read Secret| Secrets
     Lambda -->|Query/Write| EC2
     EC2 -->|Fetch at Boot| Secrets
+    Secrets -.->|rotate| EC2
+    Secrets -.->|rotate| Lambda
     Lambda -.->|Logs| CloudWatch
     EC2 -.->|Metrics| CloudWatch
     
@@ -456,17 +458,4 @@ Type `y` when prompted to confirm deletion.
 
 ---
 
-## Troubleshooting
 
-| Issue | Solution |
-|-------|----------|
-| CDK Bootstrap Fails | Run `aws configure` to set up credentials |
-| Secrets Not Found | Secrets Manager automatically creates the secret - check CloudFormation events |
-| 502 Bad Gateway | Wait 2-3 minutes for InfluxDB to initialize after EC2 boot |
-| Lambda Timeout | Check EC2 instance health and CloudWatch logs |
-| Credential Mismatch | Restart EC2 instance to fetch latest credentials from Secrets Manager |
-| Deployment Fails | Check CloudFormation events and ensure IAM permissions are correct |
-
----
-
-**Built with AWS CDK, TypeScript, and Python**
