@@ -88,46 +88,9 @@ npx cdk bootstrap aws://360066926992/eu-central-1
 - Creates IAM roles for CloudFormation
 - Sets up CDK toolkit stack
 
-### Step 3: Configure SSM Parameters
+### Step 3: Deploy the Stack
 
-Create the required SSM parameters with your InfluxDB credentials:
-
-```bash
-# Create auth token (SecureString - encrypted)
-aws ssm put-parameter \\
-  --name "/influxdb/auth-token" \\
-  --value "my-super-secret-auth-token" \\
-  --type SecureString \\
-  --region eu-central-1
-
-# Create organization name
-aws ssm put-parameter \\
-  --name "/influxdb/organization" \\
-  --value "myorg" \\
-  --type String \\
-  --region eu-central-1
-
-# Create bucket name
-aws ssm put-parameter \\
-  --name "/influxdb/bucket" \\
-  --value "mybucket" \\
-  --type String \\
-  --region eu-central-1
-```
-
-**Important Notes:**
-- Use a strong, unique token for /influxdb/auth-token
-- The auth token is automatically encrypted by AWS KMS
-- To update existing parameters, add --overwrite flag
-
-**Verify parameters were created:**
-```bash
-aws ssm get-parameter --name "/influxdb/auth-token" --with-decryption --region eu-central-1
-aws ssm get-parameter --name "/influxdb/organization" --region eu-central-1
-aws ssm get-parameter --name "/influxdb/bucket" --region eu-central-1
-```
-
-### Step 4: Deploy the Stack
+**Note:** SSM parameters will be created automatically with default values during deployment. You can update the auth token with a secure value after deployment.
 
 Preview the changes CDK will make:
 
@@ -163,6 +126,20 @@ InfluxDbCrudStack.LoadBalancerDNS = Influx-CrudA-XXXXXX.eu-central-1.elb.amazona
 ```
 
 **Save the ALB DNS name** - you will need it to test the API!
+
+### Step 4: (Optional) Update SSM Parameters with Secure Values
+
+After deployment, you can update the authentication token with a more secure value:
+
+```bash
+aws ssm put-parameter \
+  --name "/influxdb/auth-token" \
+  --value "your-super-secure-token-here" \
+  --type SecureString \
+  --overwrite
+```
+
+**Note:** If you change the token, you'll also need to update the InfluxDB container to use the new token. The default values work for testing.
 
 ### Step 5: Wait for InfluxDB Initialization
 

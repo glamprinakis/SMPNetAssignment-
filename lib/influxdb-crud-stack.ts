@@ -33,20 +33,36 @@ export class InfluxDbCrudStack extends cdk.Stack {
     // SSM Parameters for InfluxDB Credentials (Secure)
     // ============================================
     
-    // Note: SSM SecureString parameters should be created manually via AWS CLI
-    // or imported if they already exist. CDK's StringParameter doesn't support
-    // SecureString type directly. We'll reference the parameter names here.
+    // Create SSM parameters with placeholder values
+    // After deployment, update the auth token with a secure value:
+    // aws ssm put-parameter --name "/influxdb/auth-token" --value "your-secure-token" --type SecureString --overwrite
     
-    // The parameters should be created with:
-    // aws ssm put-parameter --name "/influxdb/auth-token" --value "my-super-secret-auth-token" --type SecureString
-    // aws ssm put-parameter --name "/influxdb/organization" --value "myorg" --type String
-    // aws ssm put-parameter --name "/influxdb/bucket" --value "mybucket" --type String
+    const authTokenParam = new ssm.StringParameter(this, 'InfluxDbTokenParam', {
+      parameterName: '/influxdb/auth-token',
+      stringValue: 'my-super-secret-auth-token',
+      description: 'InfluxDB authentication token - Update this with a secure value after deployment',
+      tier: ssm.ParameterTier.STANDARD,
+    });
+
+    const orgParam = new ssm.StringParameter(this, 'InfluxDbOrgParam', {
+      parameterName: '/influxdb/organization',
+      stringValue: 'myorg',
+      description: 'InfluxDB organization name',
+      tier: ssm.ParameterTier.STANDARD,
+    });
+
+    const bucketParam = new ssm.StringParameter(this, 'InfluxDbBucketParam', {
+      parameterName: '/influxdb/bucket',
+      stringValue: 'mybucket',
+      description: 'InfluxDB bucket name',
+      tier: ssm.ParameterTier.STANDARD,
+    });
     
     // SSM Parameter names (to be passed to Lambda)
     const ssmParamNames = {
-      tokenParamName: '/influxdb/auth-token',
-      orgParamName: '/influxdb/organization',
-      bucketParamName: '/influxdb/bucket',
+      tokenParamName: authTokenParam.parameterName,
+      orgParamName: orgParam.parameterName,
+      bucketParamName: bucketParam.parameterName,
     };
 
     // ============================================
