@@ -1,6 +1,6 @@
 # InfluxDB CRUD API on AWS
 
-A serverless time-series database infrastructure using AWS CDK with Lambda-based CRUD API, InfluxDB on EC2, and secure SSM Parameter Store for credentials.
+A serverless time-series database infrastructure using AWS CDK with Lambda-based CRUD API, InfluxDB on EC2, and secure AWS Secrets Manager for credentials.
 
 ---
 
@@ -23,30 +23,32 @@ graph TB
             end
         end
         
-        SSM[SSM Parameter Store<br/>Encrypted Credentials]
+        Secrets[AWS Secrets Manager<br/>Auto-Generated Token<br/>Encrypted Credentials]
         CloudWatch[CloudWatch<br/>Logs and Alarms]
     end
     
     Internet -->|HTTP Request| ALB
     ALB -->|Invoke| Lambda
-    Lambda -->|Read Credentials| SSM
+    Lambda -->|Read Secret| Secrets
     Lambda -->|Query/Write| EC2
+    EC2 -->|Fetch at Boot| Secrets
     Lambda -.->|Logs| CloudWatch
     EC2 -.->|Metrics| CloudWatch
     
     style ALB fill:#ff9900
     style Lambda fill:#ff9900
     style EC2 fill:#ff9900
-    style SSM fill:#28a745
+    style Secrets fill:#28a745
     style CloudWatch fill:#3498db
 ```
 
 **Architecture Highlights:**
 - 🔒 Private InfluxDB with NO public IP
-- 🔐 SSM Parameter Store with encryption
+- 🔐 AWS Secrets Manager for credential management
 - ⚡ Serverless Lambda API
 - 🌐 Multi-AZ high availability
 - 📊 CloudWatch monitoring
+- 🔄 Automatic credential sync between components
 
 ---
 
@@ -90,7 +92,7 @@ npx cdk bootstrap aws://360066926992/eu-central-1
 
 ### Step 3: Deploy the Stack
 
-**Note:** SSM parameters will be created automatically with default values during deployment. You can update the auth token with a secure value after deployment.
+**Note:** AWS Secrets Manager will automatically generate a secure random token during deployment. No manual configuration needed!
 
 Preview the changes CDK will make:
 
@@ -112,10 +114,11 @@ npm run deploy
 
 **Deployment Process:**
 1. CDK synthesizes CloudFormation template
-2. Shows resource changes (review carefully)
-3. Asks for confirmation - type y and press Enter
-4. Creates all AWS resources (12-15 minutes)
-5. Outputs the ALB DNS name
+2. Creates AWS Secrets Manager secret with auto-generated token
+3. Shows resource changes (review carefully)
+4. Asks for confirmation - type y and press Enter
+5. Creates all AWS resources (12-15 minutes)
+6. Outputs the ALB DNS name
 
 **Expected Output:**
 ```
@@ -127,42 +130,28 @@ InfluxDbCrudStack.LoadBalancerDNS = Influx-CrudA-XXXXXX.eu-central-1.elb.amazona
 
 **Save the ALB DNS name** - you will need it to test the API!
 
-### Step 4: (Optional) Update SSM Parameters with Secure Values
+**What happens during deployment:**
+- 🔐 Secrets Manager creates a secret with a random 32-character token
+- 🚀 EC2 instance fetches credentials from Secrets Manager at boot time
+- 🐳 InfluxDB container starts with the fetched credentials
+- ⚡ Lambda function reads the same credentials when processing requests
+- ✅ Everything is automatically synchronized!
 
-After deployment, you can update the authentication token with a more secure value:
+### Step 4: (Optional) Update Credentials
+
+To rotate credentials (production best practice):
 
 ```bash
-aws ssm put-parameter \
-  --name "/influxdb/auth-token" \
-  --value "your-super-secure-token-here" \
-  --type SecureString \
-  --overwrite
+# Update the secret in Secrets Manager
+aws secretsmanager update-secret \
+  --secret-id influxdb-credentials \
+  --secret-string '{"token":"your-new-secure-token","organization":"myorg","bucket":"mybucket","username":"admin","password":"newpassword"}'
+
+# Restart the EC2 instance to fetch new credentials
+aws ec2 reboot-instances --instance-ids YOUR-INSTANCE-ID
 ```
 
-**⚠️ IMPORTANT:** If you change the token in SSM, you must also update the InfluxDB container:
-
-1. SSH into the EC2 instance (or use Systems Manager Session Manager)
-2. Stop and remove the existing container:
-   ```bash
-   docker stop influxdb
-   docker rm influxdb
-   ```
-3. Start a new container with the new token:
-   ```bash
-   docker run -d \
-     --name influxdb \
-     -p 8086:8086 \
-     -v influxdb-data:/var/lib/influxdb2 \
-     -e DOCKER_INFLUXDB_INIT_MODE=setup \
-     -e DOCKER_INFLUXDB_INIT_USERNAME=admin \
-     -e DOCKER_INFLUXDB_INIT_PASSWORD=adminpassword \
-     -e DOCKER_INFLUXDB_INIT_ORG=myorg \
-     -e DOCKER_INFLUXDB_INIT_BUCKET=mybucket \
-     -e DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=your-super-secure-token-here \
-     influxdb:2.7.10
-   ```
-
-**Note:** The default token "my-super-secret-auth-token" works fine for testing and development purposes.
+The instance will automatically fetch the new credentials and restart InfluxDB with them. No manual Docker commands needed!
 
 ### Step 5: Wait for InfluxDB Initialization
 
@@ -182,6 +171,32 @@ This script will:
 - Check if all resources are created
 - Verify health endpoints
 - Display ALB DNS name
+
+### Inspecting the created secret
+
+After deployment, you can inspect the secret that CDK created (`influxdb-credentials`) to verify the values. Example (requires jq):
+
+```bash
+# Print the raw secret JSON
+aws secretsmanager get-secret-value \
+  --secret-id influxdb-credentials \
+  --query SecretString \
+  --output text | jq
+
+# Print only the token value (useful for quick checks)
+aws secretsmanager get-secret-value \
+  --secret-id influxdb-credentials \
+  --query SecretString \
+  --output text | jq -r .token
+```
+
+Make sure your AWS CLI is configured for the same region (eu-central-1) and account you deployed into.
+
+### Rotation (optional)
+
+For production use, enable automatic rotation in Secrets Manager. You can configure rotation in the AWS Console or with CDK by attaching a rotation Lambda to the secret. Rotation options depend on your InfluxDB setup; a rotation flow should: (1) create a new token, (2) update the InfluxDB configuration, and (3) validate connectivity before marking the new secret version as current.
+
+If you only need to manually rotate the token, update the secret (as shown in Step 4) and then reboot the EC2 instance so it picks up the new value.
 
 ---
 
@@ -420,7 +435,8 @@ Verifies CloudFormation stack and resource health.
 | NAT Gateway | ~$32.00 |
 | Lambda (1M requests) | ~$0.20 |
 | CloudWatch Logs | ~$2.00 |
-| **Total** | **~$58.90/month** |
+| **Secrets Manager** | **~$0.40** |
+| **Total** | **~$59.30/month** |
 
 *Costs based on eu-central-1 region pricing. Actual costs may vary based on usage.*
 
@@ -436,12 +452,7 @@ npx cdk destroy
 
 Type `y` when prompted to confirm deletion.
 
-**Also delete SSM parameters:**
-```bash
-aws ssm delete-parameter --name "/influxdb/auth-token"
-aws ssm delete-parameter --name "/influxdb/organization"
-aws ssm delete-parameter --name "/influxdb/bucket"
-```
+**Note:** The Secrets Manager secret will be automatically deleted when you destroy the stack. CDK handles all cleanup!
 
 ---
 
@@ -450,10 +461,11 @@ aws ssm delete-parameter --name "/influxdb/bucket"
 | Issue | Solution |
 |-------|----------|
 | CDK Bootstrap Fails | Run `aws configure` to set up credentials |
-| SSM Parameters Not Found | Create SSM parameters as shown in Step 3 |
-| 502 Bad Gateway | Wait 2-3 minutes for InfluxDB to initialize |
+| Secrets Not Found | Secrets Manager automatically creates the secret - check CloudFormation events |
+| 502 Bad Gateway | Wait 2-3 minutes for InfluxDB to initialize after EC2 boot |
 | Lambda Timeout | Check EC2 instance health and CloudWatch logs |
-| Deployment Fails | Verify SSM parameters exist and check CloudFormation events |
+| Credential Mismatch | Restart EC2 instance to fetch latest credentials from Secrets Manager |
+| Deployment Fails | Check CloudFormation events and ensure IAM permissions are correct |
 
 ---
 
