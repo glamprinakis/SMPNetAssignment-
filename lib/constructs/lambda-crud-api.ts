@@ -37,19 +37,19 @@ export interface LambdaCrudApiConstructProps {
   readonly influxDbPrivateIp: string;
 
   /**
-   * InfluxDB authentication token
+   * SSM Parameter name for InfluxDB authentication token
    */
-  readonly influxDbToken: string;
+  readonly influxDbTokenParamName: string;
 
   /**
-   * InfluxDB organization name
+   * SSM Parameter name for InfluxDB organization
    */
-  readonly influxDbOrg: string;
+  readonly influxDbOrgParamName: string;
 
   /**
-   * InfluxDB bucket name
+   * SSM Parameter name for InfluxDB bucket
    */
-  readonly influxDbBucket: string;
+  readonly influxDbBucketParamName: string;
 }
 
 export class LambdaCrudApiConstruct extends Construct {
@@ -61,17 +61,26 @@ export class LambdaCrudApiConstruct extends Construct {
   constructor(scope: Construct, id: string, props: LambdaCrudApiConstructProps) {
     super(scope, id);
 
-    const { vpc, securityGroup, influxDbPrivateIp, influxDbToken, influxDbOrg, influxDbBucket } = props;
+    const { vpc, securityGroup, influxDbPrivateIp, influxDbTokenParamName, influxDbOrgParamName, influxDbBucketParamName } = props;
 
     // IAM Role for Lambda (created at parent scope to preserve logical ID)
     const lambdaRole = new iam.Role(scope, 'LambdaCrudRole', {
       assumedBy: new iam.ServicePrincipal('lambda.amazonaws.com'),
-      description: 'IAM role for Lambda CRUD service',
+      description: 'IAM role for Lambda CRUD service with SSM access',
       managedPolicies: [
         iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaVPCAccessExecutionRole'),
         iam.ManagedPolicy.fromAwsManagedPolicyName('service-role/AWSLambdaBasicExecutionRole'),
       ],
     });
+
+    // Grant Lambda permission to read SSM parameters
+    lambdaRole.addToPolicy(new iam.PolicyStatement({
+      effect: iam.Effect.ALLOW,
+      actions: ['ssm:GetParameter', 'ssm:GetParameters'],
+      resources: [
+        `arn:aws:ssm:${cdk.Stack.of(scope).region}:${cdk.Stack.of(scope).account}:parameter/influxdb/*`,
+      ],
+    }));
 
     // Create Lambda function with UV-based dependencies
     // Note: UV bundling happens during deployment via pyproject.toml
@@ -88,9 +97,9 @@ export class LambdaCrudApiConstruct extends Construct {
       timeout: cdk.Duration.seconds(30),
       environment: {
         INFLUXDB_URL: `http://${influxDbPrivateIp}:8086`,
-        INFLUXDB_TOKEN: influxDbToken,
-        INFLUXDB_ORG: influxDbOrg,
-        INFLUXDB_BUCKET: influxDbBucket,
+        INFLUXDB_TOKEN_PARAM: influxDbTokenParamName,
+        INFLUXDB_ORG_PARAM: influxDbOrgParamName,
+        INFLUXDB_BUCKET_PARAM: influxDbBucketParamName,
       },
       logRetention: logs.RetentionDays.ONE_WEEK,
     });

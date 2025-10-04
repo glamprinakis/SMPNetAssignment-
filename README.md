@@ -1,8 +1,8 @@
-# InfluxDB CRUD Service - AWS CDK
+# InfluxDB CRUD Service - AWS CDK Infrastructure
 
-A production-ready, modular AWS infrastructure for deploying a private InfluxDB instance with a serverless CRUD API.
+A production-ready, secure AWS infrastructure for deploying a private InfluxDB time-series database with a serverless CRUD API, featuring SSM Parameter Store for credential management.
 
-## 📊 Architecture
+## 📊 Architecture Overview
 
 ```mermaid
 graph TB
@@ -10,24 +10,24 @@ graph TB
     
     subgraph AWS["AWS Cloud"]
         subgraph VPC["VPC: 10.0.0.0/16"]
-            subgraph Public["Public Subnets"]
-                ALB["Application Load Balancer<br/>Port 80"]
-                NAT["NAT Gateway"]
+            subgraph Public["Public Subnets (2 AZs)"]
+                ALB["Application Load Balancer<br/>Port 80<br/>Public-facing"]
+                NAT["NAT Gateway<br/>For egress traffic"]
             end
             
-            subgraph Private["Private Subnets"]
-                Lambda["Lambda Function<br/>Python 3.11<br/>CRUD API"]
-                InfluxDB["InfluxDB EC2<br/>t3.small<br/>Port 8086<br/>No Public IP"]
+            subgraph Private["Private Subnets (2 AZs)"]
+                Lambda["Lambda Function<br/>Python 3.11<br/>CRUD API<br/>Reads from SSM at runtime"]
+                InfluxDB["InfluxDB EC2 Instance<br/>t2.micro<br/>Port 8086<br/>❌ No Public IP"]
             end
         end
         
-        SSM["SSM Parameter Store<br/>Age Private Key"]
+        SSM["AWS SSM Parameter Store<br/>🔐 Encrypted Credentials<br/>/influxdb/auth-token<br/>/influxdb/organization<br/>/influxdb/bucket"]
     end
     
-    Internet -->|HTTP| ALB
+    Internet -->|HTTP Request| ALB
     ALB -->|Invoke| Lambda
+    Lambda -->|Read Secrets| SSM
     Lambda -->|HTTP:8086| InfluxDB
-    InfluxDB -->|Decrypt Secrets| SSM
     
     style ALB fill:#ff9900
     style Lambda fill:#ff9900
@@ -35,225 +35,186 @@ graph TB
     style SSM fill:#28a745
 ```
 
-**Key Features:**
-- 🔒 **Private InfluxDB** - No public IP, accessible only from Lambda
-- ⚡ **Serverless API** - Lambda with automatic scaling
-- 🔐 **Secrets Management** - SOPS/Age encryption (no hardcoded credentials)
-- 📦 **Modern Tooling** - UV package manager, Jest testing
-- 🏗️ **Modular Design** - 6 reusable CDK constructs
+## 🔑 Key Features
 
-## 🚀 Quick Start
+### Security
+- 🔒 **Private InfluxDB** - Zero public exposure, only accessible from Lambda within VPC
+- 🔐 **SSM Parameter Store** - Credentials encrypted at rest (SecureString)
+- 🛡️ **IAM Least Privilege** - Lambda has only required SSM read permissions
+- 🌐 **Network Isolation** - Multi-AZ deployment with proper subnet segmentation
 
-### Prerequisites
+### Infrastructure
+- ⚡ **Serverless API** - AWS Lambda with automatic scaling
+- 🏗️ **Modular CDK** - 6 reusable constructs for maintainability
+- 📊 **CloudWatch Monitoring** - Alarms for Lambda, ALB, and EC2
+- 🔄 **High Availability** - Multi-AZ deployment with NAT Gateway
+
+### Development
+- 🧪 **Comprehensive Testing** - 70+ unit tests with Jest
+- 📦 **Modern Tooling** - TypeScript
+- 🚀 **CI/CD Ready** - Automated deployment scripts
+
+## 📋 Prerequisites
+
+### Required Software
 
 ```bash
-# Install UV package manager
-curl -LsSf https://astral.sh/uv/install.sh | sh
+# 1. Install Node.js and npm (if not already installed)
+node --version  # Should be v18+ 
+npm --version   # Should be v9+
 
-# Install SOPS and Age
-brew install sops age  # macOS
-# OR
-# Linux: Download from GitHub releases
+# 2. Install AWS CLI v2
+# macOS:
+brew install awscli
 
-# Verify installations
-uv --version
-sops --version
-age --version
+# Linux:
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+unzip awscliv2.zip
+sudo ./aws/install
 
-# Install project dependencies
-npm install
-uv sync
+# Verify
+aws --version  # Should be aws-cli/2.x
 ```
 
-### Deploy
+### AWS Account Setup
+
+1. **AWS Account** - You need an active AWS account
+2. **AWS Credentials** - Configure your credentials:
 
 ```bash
-# 1. Bootstrap CDK (first time only)
-cdk bootstrap
+aws configure
+# AWS Access Key ID: [Your access key]
+# AWS Secret Access Key: [Your secret key]
+# Default region name: eu-central-1  (or your preferred region)
+# Default output format: json
+```
 
-# 2. Store age private key in AWS SSM
+3. **Required IAM Permissions:**
+   - CloudFormation (create/update stacks)
+   - EC2 (VPC, instances, security groups)
+   - Lambda (create functions)
+   - IAM (create roles and policies)
+   - SSM (create/read parameters)
+   - Elastic Load Balancing (create ALB)
+   - CloudWatch (create alarms and logs)
+
+## 🚀 Deployment Guide (Complete Step-by-Step)
+
+### Step 1: Clone and Setup
+
+```bash
+# Clone the repository
+git clone <repository-url>
+cd test
+
+# Install dependencies
+npm install
+
+# Make scripts executable
+chmod +x scripts/*.sh
+```
+
+### Step 2: Bootstrap CDK (First Time Only)
+
+This creates the necessary CDK resources in your AWS account:
+
+```bash
+npx cdk bootstrap
+```
+
+**Expected Output:**
+```
+✅ Environment aws://YOUR-ACCOUNT-ID/eu-central-1 bootstrapped
+```
+
+### Step 3: Create SSM Parameters
+
+Store the InfluxDB credentials securely in AWS Systems Manager Parameter Store:
+
+```bash
+# Create auth token (SecureString - encrypted at rest)
 aws ssm put-parameter \
-  --name "/influxdb/age-private-key" \
-  --value "$(cat age-key.txt)" \
+  --name "/influxdb/auth-token" \
+  --value "my-super-secret-auth-token" \
   --type SecureString
 
-# 3. Deploy the stack
-npm run deploy
+# Create organization name
+aws ssm put-parameter \
+  --name "/influxdb/organization" \
+  --value "myorg" \
+  --type String
 
-# Note your ALB DNS from the output:
-# Outputs:
-# InfluxDbCrudStack.ALBDnsName = your-alb-xxxxx.region.elb.amazonaws.com
+# Create bucket name
+aws ssm put-parameter \
+  --name "/influxdb/bucket" \
+  --value "mybucket" \
+  --type String
 ```
 
-**Deployment time:** ~12-15 minutes
+**Note:** These values must match the InfluxDB Docker container configuration in `lib/constructs/influxdb-instance.ts`.
 
-### Cleanup
+### Step 4: Deploy the Infrastructure
 
 ```bash
-npm run destroy
+npm run deploy
+```
+
+**Deployment Process:**
+1. CDK synthesizes CloudFormation template (~5s)
+2. Shows you the changes to be deployed
+3. Prompts for confirmation: Type `y` and press Enter
+4. Creates all AWS resources (~12-15 minutes)
+
+**Expected Output:**
+```
+✨  Deployment time: 354.98s
+
+Outputs:
+InfluxDbCrudStack.ALBDnsName = Influx-CrudA-xxxxx.eu-central-1.elb.amazonaws.com
+InfluxDbCrudStack.ApiEndpoint = http://Influx-CrudA-xxxxx.eu-central-1.elb.amazonaws.com
+InfluxDbCrudStack.InfluxDbPrivateIp = 10.0.2.70
+InfluxDbCrudStack.VpcId = vpc-xxxxx
+
+✅ Stack deployed successfully!
+```
+
+**⚠️ Important:** Save the `ALBDnsName` - you'll need it for testing!
+
+### Step 5: Verify Deployment
+
+```bash
+# Check deployment status and API health
+./scripts/check-deployment-status.sh
+```
+
+**Expected Output:**
+```
+✓ Stack is deployed successfully
+✓ API is healthy and responding
+✓ Deployment is complete and healthy! 🚀
 ```
 
 ## 🧪 Testing
 
-### Unit Tests
-
-Run the full test suite (70 tests across 7 test files):
-
-```bash
-# Run all tests
-npm test
-
-# Watch mode (auto-rerun on changes)
-npm run test:watch
-
-# Generate coverage report
-npm run test:coverage
-```
-
-**Expected output:**
-```
-Test Suites: 7 passed, 7 total
-Tests:       70 passed, 70 total
-Time:        ~6s
-Coverage:    80%+
-```
-
-### Finding Your ALB DNS
-
-After deployment, you need the Application Load Balancer DNS name to test the API:
-
-```bash
-# Make scripts executable (first time only)
-chmod +x scripts/*.sh
-
-# Option 1: Check deployment status (requires CloudFormation permissions)
-./scripts/check-deployment-status.sh
-
-# Option 2: Use the helper script to find ALB DNS
-./scripts/get-alb-dns.sh
-
-# Option 3: Manual lookup - Check deployment output for:
-# "InfluxDbCrudStack.ALBDnsName = your-alb-xxxxx.region.elb.amazonaws.com"
-```
-
-**Note**: If you don't have CloudFormation permissions, the ALB DNS will be shown in your deployment terminal output.
-
-**Sample Output:**
-```
-╔══════════════════════════════════════════════════════════════╗
-║        CDK Deployment Status Checker                         ║
-╚══════════════════════════════════════════════════════════════╝
-
-ℹ Checking CloudFormation stack: InfluxDbCrudStack
-
-  Status: CREATE_COMPLETE
-✓ Stack is deployed successfully
-
-ℹ Retrieving stack outputs...
-
-  ALB DNS: my-alb-123456.eu-central-1.elb.amazonaws.com
-
-ℹ Checking API health...
-
-  Attempt 1/3: OK
-✓ API is healthy and responding
-
-✓ Deployment is complete and healthy! 🚀
-
-  You can now test the API:
-    ./scripts/test-api.sh
-```
-
-**Exit codes:**
-- `0` - Stack deployed and healthy (ready to test)
-- `1` - Stack not deployed or unhealthy
-- `2` - Stack deployment in progress
-
-### API Endpoint Testing
-
-#### Option 1: Automated Integration Tests (Recommended)
+### Automated Integration Tests (Recommended)
 
 Run the comprehensive test suite that validates all CRUD operations:
 
 ```bash
-# Make script executable (first time only)
-chmod +x scripts/test-api.sh
-
-# Auto-discover ALB DNS from CloudFormation (recommended)
+# Auto-discover ALB DNS and run all tests
 ./scripts/test-api.sh
-
-# Or specify ALB DNS manually
-./scripts/test-api.sh my-alb-123456.eu-central-1.elb.amazonaws.com
 ```
 
-**Features:**
-- ✅ Auto-discovers ALB DNS from CloudFormation
-- ✅ Validates HTTP status codes and response structure
-- ✅ Tests all CRUD operations (Create, Read, Update, Delete)
-- ✅ Includes error handling tests
-- ✅ Automatic cleanup of test data
-- ✅ Color-coded output with pass/fail indicators
-- ✅ Comprehensive test summary
+**Test Coverage:**
+- ✅ Health check endpoint
+- ✅ Create data (POST /data)
+- ✅ Retrieve data (GET /data)
+- ✅ Update data (PUT /data/:id)
+- ✅ Delete data (DELETE /data/:id)
+- ✅ Error handling (404 responses)
 
-**Sample Output:**
+**Expected Output:**
 ```
-╔══════════════════════════════════════════════════════════════╗
-║     InfluxDB CRUD API Integration Test Suite                ║
-╚══════════════════════════════════════════════════════════════╝
-
-✓ All prerequisites installed
-ℹ Retrieving ALB DNS from CloudFormation stack
-ℹ Test Configuration:
-  Base URL: http://my-alb-123456.eu-central-1.elb.amazonaws.com
-  Test ID: test_1696348800
-
-ℹ Waiting for API to be healthy...
-✓ API is healthy
-
-================================================================
-Test Suite 1: Health Check
-================================================================
-Response: {"status":"healthy","timestamp":"2025-10-03T12:34:56.123456"}
-✓ Test 1: Health check returns 200 OK (Status: 200)
-✓ Test 2: Health status is 'healthy'
-✓ Test 3: Timestamp field exists
-
-================================================================
-Test Suite 2: Create Data (POST /data)
-================================================================
-Response: {"message":"Data created successfully"}
-✓ Test 4: Create data point 1 returns 201 Created (Status: 201)
-✓ Test 5: Success message received
-Response: {"message":"Data created successfully"}
-✓ Test 6: Create data point 2 returns 201 Created (Status: 201)
-
-================================================================
-Test Suite 3: Retrieve Data (GET /data)
-================================================================
-✓ Test 7: Get all data returns 200 OK (Status: 200)
-✓ Test 8: Response contains 'data' field
-✓ Test 9: Created data point 1 exists in response
-
-================================================================
-Test Suite 4: Update Data (PUT /data/:id)
-================================================================
-Response: {"message":"Data test_1696348800_sensor_001 updated successfully"}
-✓ Test 10: Update data returns 200 OK (Status: 200)
-✓ Test 11: Update success message received
-
-================================================================
-Test Suite 5: Delete Data (DELETE /data/:id)
-================================================================
-Response: {"message":"Data test_1696348800_sensor_001 deleted successfully"}
-✓ Test 12: Delete data returns 200 OK (Status: 200)
-✓ Test 13: Delete success message received
-✓ Test 14: Deleted data no longer appears in results
-
-================================================================
-Test Suite 6: Error Handling
-================================================================
-✓ Test 15: Invalid endpoint returns 404 Not Found (Status: 404)
-
 ================================================================
 Test Summary
 ================================================================
@@ -265,353 +226,429 @@ Test Summary
 ✓ All tests passed! 🎉
 ```
 
-**Exit codes:**
-- `0` - All tests passed
-- `1` - One or more tests failed
-- `2` - Prerequisites missing or setup failed
+### Manual API Testing
 
-#### Option 2: Manual Testing with cURL
-
-For manual testing or debugging, use cURL commands directly:
-
-**1. Health Check**
 ```bash
-curl http://<ALB-DNS>/health | jq '.'
+# Get your ALB DNS
+ALB_DNS=$(aws cloudformation describe-stacks --stack-name InfluxDbCrudStack --query 'Stacks[0].Outputs[?OutputKey==`ALBDnsName`].OutputValue' --output text)
+
+# Health check
+curl http://${ALB_DNS}/health
+
+# Create a data point
+curl -X POST http://${ALB_DNS}/data \
+  -H "Content-Type: application/json" \
+  -d '{
+    "measurement": "temperature",
+    "tags": {"location": "room1", "sensor_id": "sensor_001"},
+    "fields": {"value": 22.5}
+  }'
+
+# Get all data
+curl http://${ALB_DNS}/data
+
+# Update a data point
+curl -X PUT http://${ALB_DNS}/data/sensor_001 \
+  -H "Content-Type: application/json" \
+  -d '{
+    "measurement": "temperature",
+    "tags": {"location": "room1", "sensor_id": "sensor_001"},
+    "fields": {"value": 23.0}
+  }'
+
+# Delete a data point
+curl -X DELETE http://${ALB_DNS}/data/sensor_001
 ```
-**Expected Response:**
+
+### Unit Tests
+
+Run the TypeScript/Jest test suite:
+
+```bash
+# Run all unit tests
+npm test
+
+# Watch mode (auto-rerun on changes)
+npm run test:watch
+
+# Generate coverage report
+npm run test:coverage
+```
+
+**Expected Output:**
+```
+Test Suites: 7 passed, 7 total
+Tests:       70 passed, 70 total
+Coverage:    85%+
+Time:        ~6s
+```
+
+## 📁 Project Structure
+
+```
+test/
+├── bin/
+│   └── app.ts                          # CDK app entry point
+├── lib/
+│   ├── influxdb-crud-stack.ts          # Main stack definition (with SSM integration)
+│   └── constructs/                     # Reusable CDK constructs
+│       ├── networking.ts               # VPC, subnets, NAT, IGW
+│       ├── security-groups.ts          # Security group rules
+│       ├── influxdb-instance.ts        # EC2 instance for InfluxDB
+│       ├── lambda-crud-api.ts          # Lambda function with SSM access
+│       ├── load-balancer.ts            # ALB configuration
+│       └── monitoring.ts               # CloudWatch alarms
+├── lambda/
+│   └── index.py                        # Python Lambda handler (CRUD operations)
+├── scripts/
+│   ├── check-deployment-status.sh      # ✅ Verify deployment and API health
+│   ├── get-alb-dns.sh                  # ✅ Retrieve ALB DNS name
+│   ├── test-api.sh                     # ✅ Run integration tests
+│   └── quick-test-guide.sh             # ✅ Display quick reference
+├── test/
+│   ├── influxdb-crud-stack.test.ts     # Stack-level tests
+│   └── constructs/                     # Unit tests for each construct
+├── cdk.json                            # CDK configuration
+├── package.json                        # npm dependencies
+├── tsconfig.json                       # TypeScript configuration
+└── README.md                           # This file
+```
+
+### Unused Files (Can Be Ignored or Deleted)
+
+These files are present but not currently used in the deployment:
+
+- `age-key.txt` - Age encryption key (for SOPS, not currently used)
+- `secrets.yaml` - Encrypted secrets file (not used, credentials in SSM instead)
+- `scripts/decrypt-secrets.py` - SOPS decryption script (not needed with manual SSM setup)
+- `pyproject.toml` / `uv.lock` - UV package manager files (optional, for Python dependencies)
+- `current-kms-policy.json` - KMS policy reference (not currently used)
+- `cdk.context.json` - CDK context cache (auto-generated, can be deleted)
+
+**Safe to delete:**
+```bash
+rm age-key.txt secrets.yaml current-kms-policy.json
+rm scripts/decrypt-secrets.py
+rm pyproject.toml uv.lock
+```
+
+## 🏗️ Architecture Details
+
+### Network Architecture
+
+**VPC Configuration:**
+- CIDR: 10.0.0.0/16
+- 2 Availability Zones
+- 2 Public Subnets (for ALB and NAT Gateway)
+- 2 Private Subnets (for Lambda and EC2)
+- Internet Gateway for public subnets
+- NAT Gateway for private subnet egress
+
+**Security Groups:**
+1. **ALB Security Group**
+   - Inbound: Port 80 from 0.0.0.0/0 (public internet)
+   - Outbound: All traffic
+
+2. **Lambda Security Group**
+   - Inbound: None (invoked by ALB)
+   - Outbound: All traffic (to reach InfluxDB and SSM)
+
+3. **InfluxDB Security Group**
+   - Inbound: Port 8086 from Lambda Security Group only
+   - Outbound: All traffic
+
+### Data Flow
+
+1. **User Request** → ALB (public endpoint)
+2. **ALB** → Invokes Lambda function
+3. **Lambda** → Reads credentials from SSM Parameter Store
+4. **Lambda** → Makes HTTP request to InfluxDB (port 8086)
+5. **InfluxDB** → Processes request and returns data
+6. **Lambda** → Returns response to ALB
+7. **ALB** → Returns response to user
+
+### SSM Parameter Store Integration
+
+**Parameters Created:**
+- `/influxdb/auth-token` (SecureString) - InfluxDB authentication token
+- `/influxdb/organization` (String) - InfluxDB organization name
+- `/influxdb/bucket` (String) - InfluxDB bucket name
+
+**Lambda Configuration:**
+- Environment variables contain SSM parameter names (not values)
+- IAM role grants `ssm:GetParameter` permission
+- Credentials fetched at Lambda runtime (not at deployment time)
+- Encrypted in transit and at rest
+
+## 🛠️ Utility Scripts
+
+### `check-deployment-status.sh`
+Comprehensive deployment verification script.
+
+```bash
+./scripts/check-deployment-status.sh
+```
+
+**Features:**
+- Checks CloudFormation stack status
+- Retrieves ALB DNS name
+- Tests API health endpoint
+- Detects active deployment processes
+
+**Exit Codes:**
+- `0` - Deployment complete and healthy
+- `1` - Deployment failed or unhealthy
+- `2` - Deployment in progress
+
+### `get-alb-dns.sh`
+Retrieves the ALB DNS name from CloudFormation.
+
+```bash
+./scripts/get-alb-dns.sh
+```
+
+**Output:**
+```
+✓ Found via CloudFormation:
+  Influx-CrudA-xxxxx.eu-central-1.elb.amazonaws.com
+```
+
+### `test-api.sh`
+Comprehensive integration test suite for the API.
+
+```bash
+# Auto-discover ALB DNS
+./scripts/test-api.sh
+
+# Use specific ALB DNS
+./scripts/test-api.sh my-alb-xxxxx.region.elb.amazonaws.com
+```
+
+**Test Suites:**
+1. Health Check
+2. Create Data (POST)
+3. Retrieve Data (GET)
+4. Update Data (PUT)
+5. Delete Data (DELETE)
+6. Error Handling
+
+### `quick-test-guide.sh`
+Displays quick reference for testing commands.
+
+```bash
+./scripts/quick-test-guide.sh
+```
+
+## 🔧 Common Issues & Troubleshooting
+
+### Issue: Deployment fails with "AlreadyExists" error
+
+**Problem:** SSM parameter already exists from previous deployment.
+
+**Solution:**
+```bash
+# Update existing parameters with --overwrite flag
+aws ssm put-parameter --name "/influxdb/auth-token" \
+  --value "my-super-secret-auth-token" \
+  --type SecureString --overwrite
+```
+
+### Issue: API returns 502 Bad Gateway
+
+**Problem:** InfluxDB instance not fully initialized yet.
+
+**Solution:**
+- Wait 5-10 minutes after deployment for InfluxDB Docker container to start
+- Check EC2 instance logs:
+```bash
+# Get instance ID
+aws ec2 describe-instances --filters "Name=tag:Name,Values=InfluxDbInstance" \
+  --query "Reservations[].Instances[].InstanceId" --output text
+
+# View user-data logs via SSM Session Manager
+aws ssm start-session --target <instance-id>
+# Then run: cat /var/log/user-data.log
+```
+
+### Issue: Root path (/) returns "Not found"
+
+**Status:** ✅ This is expected behavior
+
+**Explanation:** The root path is not defined. Use specific endpoints:
+- `/health` - Health check
+- `/data` - CRUD operations
+
+### Issue: Cannot assume CDK roles (warnings during deployment)
+
+**Status:** ⚠️ Warning only, deployment proceeds
+
+**Explanation:** Using direct credentials instead of assuming CDK-created roles. This is normal and doesn't prevent deployment.
+
+### Issue: Tests fail with "Connection refused"
+
+**Problem:** InfluxDB not running or network configuration issue.
+
+**Solution:**
+1. Check EC2 instance status in AWS Console
+2. Verify security group rules
+3. Wait longer for InfluxDB initialization
+4. Check Lambda logs in CloudWatch
+
+## 🧹 Cleanup
+
+### Delete All Resources
+
+```bash
+# Delete the CloudFormation stack (removes all resources)
+npm run destroy
+```
+
+**⚠️ Warning:** This will delete:
+- VPC and all subnets
+- EC2 instance (InfluxDB data will be lost)
+- Lambda function
+- Application Load Balancer
+- Security groups
+- CloudWatch alarms and logs
+
+**SSM Parameters are NOT automatically deleted.** To remove them:
+
+```bash
+# Delete SSM parameters
+aws ssm delete-parameter --name "/influxdb/auth-token"
+aws ssm delete-parameter --name "/influxdb/organization"
+aws ssm delete-parameter --name "/influxdb/bucket"
+```
+
+## 📊 Cost Estimation
+
+**Monthly AWS Costs** (eu-central-1 region, approximate):
+
+| Service | Configuration | Monthly Cost |
+|---------|---------------|--------------|
+| EC2 (t2.micro) | 1 instance, 24/7 | ~$8.50 |
+| NAT Gateway | 1 gateway, minimal data | ~$32.00 |
+| Application Load Balancer | Basic usage | ~$16.20 |
+| Lambda | 1M requests, 512MB, 1s avg | ~$0.20 |
+| CloudWatch | Logs and alarms | ~$2.00 |
+| SSM Parameter Store | Standard parameters | $0.00 |
+| **Total** | | **~$58.90/month** |
+
+**Notes:**
+- Costs vary by region
+- NAT Gateway is the most expensive component
+- Free tier eligible (first 12 months): EC2 t2.micro, Lambda, ALB (partial)
+- Data transfer costs not included
+
+## 📝 API Reference
+
+### Endpoints
+
+#### `GET /health`
+Health check endpoint.
+
+**Response:**
 ```json
 {
   "status": "healthy",
-  "timestamp": "2025-10-03T10:30:00.000000"
+  "timestamp": "2025-10-04T16:17:47.313710"
 }
 ```
 
-**2. Create Data**
-```bash
-curl -X POST http://<ALB-DNS>/data \
-  -H "Content-Type: application/json" \
-  -d '{
-    "measurement": "sensor_data",
-    "tags": {"sensor_id": "sensor_001", "location": "office"},
-    "fields": {"temperature": 22.5, "humidity": 65}
-  }' | jq '.'
+#### `POST /data`
+Create a new data point in InfluxDB.
+
+**Request Body:**
+```json
+{
+  "measurement": "temperature",
+  "tags": {
+    "location": "room1",
+    "sensor_id": "sensor_001"
+  },
+  "fields": {
+    "value": 22.5
+  }
+}
 ```
-**Expected Response:**
+
+**Response:**
 ```json
 {
   "message": "Data created successfully"
 }
 ```
 
-**3. Get All Data**
-```bash
-curl http://<ALB-DNS>/data | jq '.'
-```
-**Expected Response:**
+#### `GET /data`
+Retrieve all data points from the last 7 days.
+
+**Response:**
 ```json
 {
   "data": [
     {
-      "_time": "2025-10-03T10:30:00Z",
-      "_measurement": "sensor_data",
-      "sensor_id": "sensor_001",
-      "temperature": "22.5",
-      "humidity": "65"
+      "_time": "2025-10-04T16:17:56.851754441Z",
+      "_value": "22.5",
+      "_field": "value",
+      "_measurement": "temperature",
+      "location": "room1",
+      "sensor_id": "sensor_001"
     }
   ]
 }
 ```
 
-**4. Update Data**
-```bash
-curl -X PUT http://<ALB-DNS>/data/sensor_001 \
-  -H "Content-Type: application/json" \
-  -d '{
-    "measurement": "sensor_data",
-    "tags": {"sensor_id": "sensor_001"},
-    "fields": {"temperature": 25.0, "humidity": 70}
-  }' | jq '.'
+#### `PUT /data/:id`
+Update a data point (creates a new point and deletes old).
+
+**URL Parameters:**
+- `id` - Sensor ID or tag value to match
+
+**Request Body:**
+```json
+{
+  "measurement": "temperature",
+  "tags": {
+    "location": "room1",
+    "sensor_id": "sensor_001"
+  },
+  "fields": {
+    "value": 23.0
+  }
+}
 ```
-**Expected Response:**
+
+**Response:**
 ```json
 {
   "message": "Data sensor_001 updated successfully"
 }
 ```
 
-**5. Delete Data**
-```bash
-curl -X DELETE http://<ALB-DNS>/data/sensor_001 | jq '.'
-```
-**Expected Response:**
+#### `DELETE /data/:id`
+Delete data points matching the sensor ID.
+
+**URL Parameters:**
+- `id` - Sensor ID or tag value to match
+
+**Response:**
 ```json
 {
   "message": "Data sensor_001 deleted successfully"
 }
 ```
 
-### Troubleshooting Tests
+## 📚 Additional Resources
 
-#### Quick Troubleshooting Guide
-```bash
-# See all available commands and common issues
-./scripts/quick-test-guide.sh
-```
-
-#### Test script fails with "Could not retrieve ALB DNS"
-**Cause**: Missing AWS CloudFormation permissions
-
-**Solutions**:
-```bash
-# Option 1: Use the helper script
-./scripts/get-alb-dns.sh
-
-# Option 2: Find ALB DNS in AWS Console
-# Go to: EC2 > Load Balancers > Look for "Influx-CrudA-*"
-
-# Option 3: Check your deployment terminal output for:
-# "InfluxDbCrudStack.ALBDnsName = your-alb-xxxxx.elb.amazonaws.com"
-
-# Then run tests with explicit DNS:
-./scripts/test-api.sh "your-alb-xxxxx.region.elb.amazonaws.com"
-```
-
-#### Health check passes but CRUD operations fail with "Connection refused"
-**Cause**: Lambda cannot connect to InfluxDB on port 8086
-
-**Diagnosis**: Error message shows `HTTPConnectionPool(host='10.0.x.x', port=8086): ... Connection refused`
-
-**Solutions**:
-1. **Wait for InfluxDB initialization** (5-10 minutes after first deployment)
-2. **Check InfluxDB is running**:
-   ```bash
-   # Find EC2 instance ID
-   aws ec2 describe-instances \
-     --filters "Name=tag:Name,Values=*InfluxDbInstance*" \
-     --query "Reservations[0].Instances[0].InstanceId"
-   
-   # Connect via SSM and check status
-   aws ssm start-session --target <INSTANCE_ID>
-   sudo systemctl status influxdb
-   ```
-3. **Verify security groups** allow Lambda → InfluxDB on port 8086
-4. **Check Lambda logs**:
-   ```bash
-   aws logs tail /aws/lambda/InfluxDbCrudStack-CrudLambdaFunction --follow
-   ```
-
-#### Tests pass but data doesn't appear in GET requests
-**Cause**: InfluxDB eventual consistency
-
-This is normal behavior! InfluxDB may have a slight delay before data becomes queryable. The test script accounts for this with sleep intervals between operations.
-
-#### "jq: command not found"
-```bash
-# Install jq for better JSON handling
-brew install jq  # macOS
-# or
-sudo apt-get install jq  # Ubuntu/Debian
-```
-
-#### All tests fail immediately
-**Checklist**:
-- ✅ Stack is deployed (`cdk deploy` completed successfully)
-- ✅ ALB DNS is correct (no typos, no newlines)
-- ✅ ALB is in "active" state (check EC2 console)
-- ✅ Target group has healthy targets
-- ✅ Lambda function exists and has correct VPC configuration
-
-## 📋 Useful Commands
-
-### Development
-
-```bash
-# Build TypeScript
-npm run build
-
-# Generate CloudFormation template
-npm run synth
-
-# Show deployment diff
-npm run diff
-
-# Compile in watch mode
-npm run watch
-```
-
-### Python Dependencies (UV)
-
-```bash
-# Add a new dependency
-uv add <package-name>
-
-# Update dependencies
-uv lock --upgrade
-
-# Sync dependencies after git pull
-uv sync
-```
-
-### Secrets Management (SOPS)
-
-```bash
-# View encrypted secrets
-export SOPS_AGE_KEY_FILE=age-key.txt
-sops secrets.yaml
-
-# Edit secrets (auto-encrypts on save)
-sops secrets.yaml
-
-# Decrypt to view
-sops -d secrets.yaml
-```
-
-### AWS/Monitoring
-
-```bash
-# View Lambda logs
-aws logs tail /aws/lambda/InfluxDbCrudStack-CrudLambdaFunction --follow
-
-# Check CloudWatch alarms
-aws cloudwatch describe-alarms
-
-# Connect to InfluxDB instance (via SSM)
-INSTANCE_ID=$(aws ec2 describe-instances \
-  --filters "Name=tag:Name,Values=*InfluxDbInstance*" \
-  --query "Reservations[0].Instances[0].InstanceId" \
-  --output text)
-aws ssm start-session --target $INSTANCE_ID
-```
-
-## 📁 Project Structure
-
-```
-├── lib/
-│   ├── constructs/              # Modular CDK constructs
-│   │   ├── networking.ts        # VPC, subnets, NAT (85 lines)
-│   │   ├── security-groups.ts   # Security groups (81 lines)
-│   │   ├── influxdb-instance.ts # InfluxDB EC2 (245 lines)
-│   │   ├── lambda-crud-api.ts   # Lambda function (97 lines)
-│   │   ├── load-balancer.ts     # ALB setup (108 lines)
-│   │   └── monitoring.ts        # CloudWatch alarms (128 lines)
-│   └── influxdb-crud-stack.ts   # Main stack (108 lines)
-├── lambda/
-│   └── index.py                 # Lambda CRUD function
-├── test/
-│   ├── constructs/              # Unit tests per construct
-│   └── influxdb-crud-stack.test.ts
-├── scripts/
-│   ├── test-api.sh              # API testing script
-│   └── check-deployment-status.sh
-├── pyproject.toml               # Python dependencies (UV)
-├── package.json                 # Node.js dependencies
-└── secrets.yaml                 # Encrypted secrets (SOPS)
-```
-
-## 🔧 Technical Specifications
-
-| Component | Details |
-|-----------|---------|
-| **Region** | eu-central-1 (configurable) |
-| **VPC** | 10.0.0.0/16, 2 AZs, 4 subnets |
-| **InfluxDB** | EC2 t3.small, 20GB GP3, Amazon Linux 2023 |
-| **Lambda** | Python 3.11, 30s timeout, VPC-enabled |
-| **ALB** | Internet-facing, HTTP port 80 |
-| **Secrets** | SOPS + Age encryption |
-| **Package Manager** | UV (10-100x faster than pip) |
-| **Testing** | Jest + CDK Assertions, 70 tests |
-
-## 💰 Cost Estimate
-
-| Resource | Monthly Cost |
-|----------|--------------|
-| EC2 t3.small | ~$15 |
-| NAT Gateway | ~$33 |
-| ALB | ~$17 |
-| Lambda | Free tier |
-| **Total** | **~$70-100/month** |
-
-💡 **Tip:** Run `npm run destroy` when not in use to avoid charges.
-
-## 🐛 Troubleshooting
-
-### Lambda can't connect to InfluxDB
-- Wait 5-10 minutes after deployment for InfluxDB to initialize
-- Check security groups allow port 8086 traffic
-- Verify Lambda is in correct VPC
-
-### Health check returns 503
-```bash
-# Check Lambda logs
-aws logs tail /aws/lambda/InfluxDbCrudStack-CrudLambdaFunction --follow
-
-# Verify InfluxDB is running
-aws ssm start-session --target <INSTANCE-ID>
-sudo systemctl status influxdb
-```
-
-### SOPS decryption fails
-```bash
-# Verify age key is set
-export SOPS_AGE_KEY_FILE=age-key.txt
-
-# Test decryption
-sops -d secrets.yaml
-
-# Check SSM parameter exists
-aws ssm get-parameter --name "/influxdb/age-private-key" --with-decryption
-```
-
-### Tests failing
-```bash
-# Clear Jest cache and rebuild
-npm test -- --clearCache
-npm run build && npm test
-```
-
-## 📚 API Reference
-
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET | `/health` | Health check |
-| POST | `/data` | Create time-series data |
-| GET | `/data` | Retrieve all data |
-| PUT | `/data/:id` | Update specific data point |
-| DELETE | `/data/:id` | Delete specific data point |
-
-**Request Body Format (POST/PUT):**
-```json
-{
-  "measurement": "sensor_data",
-  "tags": {
-    "sensor_id": "sensor_001",
-    "location": "office"
-  },
-  "fields": {
-    "temperature": 22.5,
-    "humidity": 65
-  }
-}
-```
-
-## 🏆 Key Features
-
-- ✅ **Modular Architecture** - 6 independent, reusable constructs
-- ✅ **Secure by Default** - Private networking, encrypted secrets
-- ✅ **Production Ready** - 70 tests, 80%+ coverage
-- ✅ **Modern Tooling** - UV package manager, SOPS encryption
-- ✅ **Well Documented** - Comprehensive README and inline docs
-- ✅ **Cost Optimized** - Serverless Lambda, single NAT Gateway
-- ✅ **Observable** - CloudWatch logs and alarms
-
-## 🤝 Contributing
-
-This is a demonstration project showcasing AWS CDK best practices. Feel free to use it as a template for your own infrastructure.
+- [AWS CDK Documentation](https://docs.aws.amazon.com/cdk/)
+- [InfluxDB Documentation](https://docs.influxdata.com/)
+- [AWS Lambda Python](https://docs.aws.amazon.com/lambda/latest/dg/lambda-python.html)
+- [AWS Systems Manager Parameter Store](https://docs.aws.amazon.com/systems-manager/latest/userguide/systems-manager-parameter-store.html)
 
 ## 📄 License
 
-MIT
+ISC
 
 ---
 
-**Status:** Production-Ready | **Tests:** 70/70 Passing | **Coverage:** 80%+
+**Built with ❤️ using AWS CDK, TypeScript, and Python**

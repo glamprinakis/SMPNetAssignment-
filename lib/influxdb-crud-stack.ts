@@ -30,22 +30,23 @@ export class InfluxDbCrudStack extends cdk.Stack {
     // ============================================
 
     // ============================================
-    // SSM Parameter for Age Private Key
+    // SSM Parameters for InfluxDB Credentials (Secure)
     // ============================================
-    const agePrivateKey = 'AGE-SECRET-KEY-15HLU3CZEGE53RQ8CXT0S0CPTM00J5Y6T263JXVY58ZC5C5TVWWKQW05F79';
-    const ageKeyParameter = new ssm.StringParameter(this, 'AgePrivateKeyParameter', {
-      parameterName: '/influxdb/age-private-key',
-      stringValue: agePrivateKey,
-    });
-
-    // ============================================
-    // Decrypt secrets at synthesis time (for demo purposes)
-    // ============================================
-    // In production, this should be done in Lambda at runtime
-    const decryptedSecrets = {
-      influxDbToken: 'my-super-secret-auth-token', // This would be decrypted from secrets.yaml
-      influxDbOrg: 'myorg',
-      influxDbBucket: 'mybucket',
+    
+    // Note: SSM SecureString parameters should be created manually via AWS CLI
+    // or imported if they already exist. CDK's StringParameter doesn't support
+    // SecureString type directly. We'll reference the parameter names here.
+    
+    // The parameters should be created with:
+    // aws ssm put-parameter --name "/influxdb/auth-token" --value "my-super-secret-auth-token" --type SecureString
+    // aws ssm put-parameter --name "/influxdb/organization" --value "myorg" --type String
+    // aws ssm put-parameter --name "/influxdb/bucket" --value "mybucket" --type String
+    
+    // SSM Parameter names (to be passed to Lambda)
+    const ssmParamNames = {
+      tokenParamName: '/influxdb/auth-token',
+      orgParamName: '/influxdb/organization',
+      bucketParamName: '/influxdb/bucket',
     };
 
     // ============================================
@@ -73,9 +74,9 @@ export class InfluxDbCrudStack extends cdk.Stack {
       vpc,
       securityGroup: lambdaSecurityGroup,
       influxDbPrivateIp: influxDbInstance.instancePrivateIp,
-      influxDbToken: decryptedSecrets.influxDbToken,
-      influxDbOrg: decryptedSecrets.influxDbOrg,
-      influxDbBucket: decryptedSecrets.influxDbBucket,
+      influxDbTokenParamName: ssmParamNames.tokenParamName,
+      influxDbOrgParamName: ssmParamNames.orgParamName,
+      influxDbBucketParamName: ssmParamNames.bucketParamName,
     });
 
     const crudLambda = lambdaCrudApi.lambdaFunction;

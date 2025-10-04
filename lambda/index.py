@@ -13,12 +13,45 @@ import json
 import os
 import urllib3
 from datetime import datetime
+import boto3
+
+# Initialize SSM client
+ssm_client = boto3.client('ssm')
+
+# Cache for SSM parameters
+_ssm_cache = {}
+
+def get_ssm_parameter(param_name):
+    """Get parameter from SSM Parameter Store with caching."""
+    if param_name not in _ssm_cache:
+        try:
+            response = ssm_client.get_parameter(
+                Name=param_name,
+                WithDecryption=True
+            )
+            _ssm_cache[param_name] = response['Parameter']['Value']
+        except Exception as e:
+            print(f"Error fetching SSM parameter {param_name}: {e}")
+            raise
+    return _ssm_cache[param_name]
 
 # InfluxDB configuration from environment variables
 INFLUXDB_URL = os.environ.get('INFLUXDB_URL', 'http://localhost:8086')
-INFLUXDB_TOKEN = os.environ.get('INFLUXDB_TOKEN')
-INFLUXDB_ORG = os.environ.get('INFLUXDB_ORG', 'myorg')
-INFLUXDB_BUCKET = os.environ.get('INFLUXDB_BUCKET', 'mybucket')
+
+# Read SSM parameter names from environment
+INFLUXDB_TOKEN_PARAM = os.environ.get('INFLUXDB_TOKEN_PARAM')
+INFLUXDB_ORG_PARAM = os.environ.get('INFLUXDB_ORG_PARAM')
+INFLUXDB_BUCKET_PARAM = os.environ.get('INFLUXDB_BUCKET_PARAM')
+
+# Lazy load credentials from SSM
+def get_influxdb_token():
+    return get_ssm_parameter(INFLUXDB_TOKEN_PARAM)
+
+def get_influxdb_org():
+    return get_ssm_parameter(INFLUXDB_ORG_PARAM)
+
+def get_influxdb_bucket():
+    return get_ssm_parameter(INFLUXDB_BUCKET_PARAM)
 
 http = urllib3.PoolManager()
 
@@ -30,9 +63,9 @@ def write_data(measurement, tags, fields):
     field_str = ','.join([f"{k}={v}" for k, v in fields.items()])
     line_protocol = f"{measurement},{tag_str} {field_str}"
     
-    url = f"{INFLUXDB_URL}/api/v2/write?org={INFLUXDB_ORG}&bucket={INFLUXDB_BUCKET}&precision=ns"
+    url = f"{INFLUXDB_URL}/api/v2/write?org={get_influxdb_org()}&bucket={get_influxdb_bucket()}&precision=ns"
     headers = {
-        'Authorization': f'Token {INFLUXDB_TOKEN}',
+        'Authorization': f'Token {get_influxdb_token()}',
         'Content-Type': 'text/plain; charset=utf-8'
     }
     
@@ -48,9 +81,9 @@ def write_data(measurement, tags, fields):
 
 def query_data(query_str):
     """Query data from InfluxDB using Flux query language."""
-    url = f"{INFLUXDB_URL}/api/v2/query?org={INFLUXDB_ORG}"
+    url = f"{INFLUXDB_URL}/api/v2/query?org={get_influxdb_org()}"
     headers = {
-        'Authorization': f'Token {INFLUXDB_TOKEN}',
+        'Authorization': f'Token {get_influxdb_token()}',
         'Content-Type': 'application/vnd.flux',
         'Accept': 'application/json'
     }
@@ -94,9 +127,9 @@ def parse_influxdb_response(csv_data):
 
 def delete_data(measurement, tag_key, tag_value, start_time, stop_time):
     """Delete data from InfluxDB using delete predicate."""
-    url = f"{INFLUXDB_URL}/api/v2/delete?org={INFLUXDB_ORG}&bucket={INFLUXDB_BUCKET}"
+    url = f"{INFLUXDB_URL}/api/v2/delete?org={get_influxdb_org()}&bucket={get_influxdb_bucket()}"
     headers = {
-        'Authorization': f'Token {INFLUXDB_TOKEN}',
+        'Authorization': f'Token {get_influxdb_token()}',
         'Content-Type': 'application/json'
     }
     
@@ -168,7 +201,7 @@ def handler(event, context):
         elif path == '/data' and http_method == 'GET':
             # Retrieve all data points
             query = f'''
-            from(bucket: "{INFLUXDB_BUCKET}")
+            from(bucket: "{get_influxdb_bucket()}")
               |> range(start: -7d)
               |> limit(n: 100)
             '''
