@@ -139,7 +139,30 @@ aws ssm put-parameter \
   --overwrite
 ```
 
-**Note:** If you change the token, you'll also need to update the InfluxDB container to use the new token. The default values work for testing.
+**⚠️ IMPORTANT:** If you change the token in SSM, you must also update the InfluxDB container:
+
+1. SSH into the EC2 instance (or use Systems Manager Session Manager)
+2. Stop and remove the existing container:
+   ```bash
+   docker stop influxdb
+   docker rm influxdb
+   ```
+3. Start a new container with the new token:
+   ```bash
+   docker run -d \
+     --name influxdb \
+     -p 8086:8086 \
+     -v influxdb-data:/var/lib/influxdb2 \
+     -e DOCKER_INFLUXDB_INIT_MODE=setup \
+     -e DOCKER_INFLUXDB_INIT_USERNAME=admin \
+     -e DOCKER_INFLUXDB_INIT_PASSWORD=adminpassword \
+     -e DOCKER_INFLUXDB_INIT_ORG=myorg \
+     -e DOCKER_INFLUXDB_INIT_BUCKET=mybucket \
+     -e DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=your-super-secure-token-here \
+     influxdb:2.7.10
+   ```
+
+**Note:** The default token "my-super-secret-auth-token" works fine for testing and development purposes.
 
 ### Step 5: Wait for InfluxDB Initialization
 
