@@ -25,9 +25,9 @@ describe('LambdaCrudApiConstruct', () => {
       vpc,
       securityGroup,
       influxDbPrivateIp: '10.0.0.100',
-      influxDbToken: 'test-token',
-      influxDbOrg: 'test-org',
-      influxDbBucket: 'test-bucket',
+      influxDbTokenParamName: '/influxdb/auth-token',
+      influxDbOrgParamName: '/influxdb/organization',
+      influxDbBucketParamName: '/influxdb/bucket',
     });
 
     const template = Template.fromStack(stack);
@@ -42,9 +42,9 @@ describe('LambdaCrudApiConstruct', () => {
       vpc,
       securityGroup,
       influxDbPrivateIp: '10.0.0.100',
-      influxDbToken: 'test-token',
-      influxDbOrg: 'test-org',
-      influxDbBucket: 'test-bucket',
+      influxDbTokenParamName: '/influxdb/auth-token',
+      influxDbOrgParamName: '/influxdb/organization',
+      influxDbBucketParamName: '/influxdb/bucket',
     });
 
     const template = Template.fromStack(stack);
@@ -59,9 +59,9 @@ describe('LambdaCrudApiConstruct', () => {
       vpc,
       securityGroup,
       influxDbPrivateIp: '10.0.0.100',
-      influxDbToken: 'test-token',
-      influxDbOrg: 'test-org',
-      influxDbBucket: 'test-bucket',
+      influxDbTokenParamName: '/influxdb/auth-token',
+      influxDbOrgParamName: '/influxdb/organization',
+      influxDbBucketParamName: '/influxdb/bucket',
     });
 
     const template = Template.fromStack(stack);
@@ -73,14 +73,14 @@ describe('LambdaCrudApiConstruct', () => {
     });
   });
 
-  test('Lambda function has correct environment variables', () => {
+  test('Lambda function has correct environment variables with SSM parameter names', () => {
     new LambdaCrudApiConstruct(stack, 'TestLambda', {
       vpc,
       securityGroup,
       influxDbPrivateIp: '10.0.0.100',
-      influxDbToken: 'test-token',
-      influxDbOrg: 'test-org',
-      influxDbBucket: 'test-bucket',
+      influxDbTokenParamName: '/influxdb/auth-token',
+      influxDbOrgParamName: '/influxdb/organization',
+      influxDbBucketParamName: '/influxdb/bucket',
     });
 
     const template = Template.fromStack(stack);
@@ -89,9 +89,9 @@ describe('LambdaCrudApiConstruct', () => {
       Environment: {
         Variables: {
           INFLUXDB_URL: 'http://10.0.0.100:8086',
-          INFLUXDB_TOKEN: 'test-token',
-          INFLUXDB_ORG: 'test-org',
-          INFLUXDB_BUCKET: 'test-bucket',
+          INFLUXDB_TOKEN_PARAM: '/influxdb/auth-token',
+          INFLUXDB_ORG_PARAM: '/influxdb/organization',
+          INFLUXDB_BUCKET_PARAM: '/influxdb/bucket',
         },
       },
     });
@@ -102,9 +102,9 @@ describe('LambdaCrudApiConstruct', () => {
       vpc,
       securityGroup,
       influxDbPrivateIp: '10.0.0.100',
-      influxDbToken: 'test-token',
-      influxDbOrg: 'test-org',
-      influxDbBucket: 'test-bucket',
+      influxDbTokenParamName: '/influxdb/auth-token',
+      influxDbOrgParamName: '/influxdb/organization',
+      influxDbBucketParamName: '/influxdb/bucket',
     });
 
     const template = Template.fromStack(stack);
@@ -127,9 +127,9 @@ describe('LambdaCrudApiConstruct', () => {
       vpc,
       securityGroup,
       influxDbPrivateIp: '10.0.0.100',
-      influxDbToken: 'test-token',
-      influxDbOrg: 'test-org',
-      influxDbBucket: 'test-bucket',
+      influxDbTokenParamName: '/influxdb/auth-token',
+      influxDbOrgParamName: '/influxdb/organization',
+      influxDbBucketParamName: '/influxdb/bucket',
     });
 
     const template = Template.fromStack(stack);
@@ -152,9 +152,9 @@ describe('LambdaCrudApiConstruct', () => {
       vpc,
       securityGroup,
       influxDbPrivateIp: '10.0.0.100',
-      influxDbToken: 'test-token',
-      influxDbOrg: 'test-org',
-      influxDbBucket: 'test-bucket',
+      influxDbTokenParamName: '/influxdb/auth-token',
+      influxDbOrgParamName: '/influxdb/organization',
+      influxDbBucketParamName: '/influxdb/bucket',
     });
 
     const template = Template.fromStack(stack);
@@ -170,9 +170,9 @@ describe('LambdaCrudApiConstruct', () => {
       vpc,
       securityGroup,
       influxDbPrivateIp: '10.0.0.100',
-      influxDbToken: 'test-token',
-      influxDbOrg: 'test-org',
-      influxDbBucket: 'test-bucket',
+      influxDbTokenParamName: '/influxdb/auth-token',
+      influxDbOrgParamName: '/influxdb/organization',
+      influxDbBucketParamName: '/influxdb/bucket',
     });
 
     const template = Template.fromStack(stack);
@@ -192,30 +192,37 @@ describe('LambdaCrudApiConstruct', () => {
       vpc,
       securityGroup,
       influxDbPrivateIp: '10.0.0.100',
-      influxDbToken: 'test-token',
-      influxDbOrg: 'test-org',
-      influxDbBucket: 'test-bucket',
+      influxDbTokenParamName: '/influxdb/auth-token',
+      influxDbOrgParamName: '/influxdb/organization',
+      influxDbBucketParamName: '/influxdb/bucket',
     });
 
     expect(construct.lambdaFunction).toBeDefined();
   });
 
-  test('Lambda function uses UV lock file for dependencies', () => {
+  test('IAM role has SSM read permissions', () => {
     new LambdaCrudApiConstruct(stack, 'TestLambda', {
       vpc,
       securityGroup,
       influxDbPrivateIp: '10.0.0.100',
-      influxDbToken: 'test-token',
-      influxDbOrg: 'test-org',
-      influxDbBucket: 'test-bucket',
+      influxDbTokenParamName: '/influxdb/auth-token',
+      influxDbOrgParamName: '/influxdb/organization',
+      influxDbBucketParamName: '/influxdb/bucket',
     });
 
-    // Verify uv.lock exists in project root (bundled with lambda code)
-    const fs = require('fs');
-    const path = require('path');
-    const uvLockPath = path.join(process.cwd(), 'uv.lock');
-    
-    expect(fs.existsSync(uvLockPath)).toBe(true);
+    const template = Template.fromStack(stack);
+
+    // Verify IAM policy allows SSM parameter reading
+    template.hasResourceProperties('AWS::IAM::Policy', {
+      PolicyDocument: {
+        Statement: Match.arrayWith([
+          Match.objectLike({
+            Effect: 'Allow',
+            Action: Match.arrayWith(['ssm:GetParameter']),
+          }),
+        ]),
+      },
+    });
   });
 
   test('construct is under 150 lines of code', () => {

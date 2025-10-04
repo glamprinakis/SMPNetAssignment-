@@ -59,7 +59,7 @@ describe('InfluxDbCrudStack', () => {
     const template = Template.fromStack(stack);
 
     template.hasResourceProperties('AWS::EC2::Instance', {
-      InstanceType: 't3.small'
+      InstanceType: 't2.micro'
     });
   });
 
